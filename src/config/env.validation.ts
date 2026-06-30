@@ -1,13 +1,31 @@
 import { z } from 'zod';
-export const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  PORT: z.coerce.number().int().positive().default(8080),
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
-  LOG_DIR: z.string().default('./logs'),
-  LOG_FILE_NAME: z.string().default('app.log'),
-  LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(7),
-  LOG_CLEANUP_CRON: z.string().default('0 0 * * *'),
-});
+export const envSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+    PORT: z.coerce.number().int().positive().default(8080),
+    LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+    NEW_RELIC_APP_NAME: z.string().optional(),
+    NEW_RELIC_LICENSE_KEY: z.string().optional(),
+  })
+  .superRefine((env, ctx) => {
+    if (env.NODE_ENV === 'production') {
+      if (!env.NEW_RELIC_APP_NAME) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['NEW_RELIC_APP_NAME'],
+          message: 'NEW_RELIC_APP_NAME is required in production',
+        });
+      }
+
+      if (!env.NEW_RELIC_LICENSE_KEY) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['NEW_RELIC_LICENSE_KEY'],
+          message: 'NEW_RELIC_LICENSE_KEY is required in production',
+        });
+      }
+    }
+  });
 
 export type Env = z.infer<typeof envSchema>;
 

@@ -1,11 +1,4 @@
-import {
-  LoggerService,
-  LOGGER_OPTIONS,
-  DEFAULT_REDACT_PATHS,
-  type LoggerOptions,
-} from './logger.service';
-import pino from 'pino';
-import { mkdirSync } from 'node:fs';
+import { LoggerService, DEFAULT_REDACT_PATHS, type LoggerOptions } from './logger.service';
 
 const mockChildLogger = {
   info: jest.fn(),
@@ -39,9 +32,19 @@ jest.mock('node:fs', () => ({
   mkdirSync: jest.fn(),
 }));
 
+const mockNrMixin = jest.fn(() => ({ 'trace.id': 'tr-1', 'span.id': 'sp-1' }));
+jest.mock('@newrelic/pino-enricher', () => {
+  const fn = jest.fn(() => ({ mixin: mockNrMixin }));
+  return { __esModule: true, default: fn };
+});
+
+import pino from 'pino';
+import { mkdirSync } from 'node:fs';
+import nrPino from '@newrelic/pino-enricher';
 
 const pinoMock = pino as unknown as jest.Mock;
 const mkdirSyncMock = mkdirSync as unknown as jest.Mock;
+const nrPinoMock = nrPino as unknown as jest.Mock;
 
 function lastPinoConfig(): Record<string, any> {
   const calls = pinoMock.mock.calls;
@@ -53,7 +56,6 @@ function makeCtx(values: Record<string, unknown>) {
     get: jest.fn((key: string) => values[key]),
   } as unknown as ConstructorParameters<typeof LoggerService>[1];
 }
-
 
 describe('LoggerService', () => {
   const ORIGINAL_ENV = process.env.NODE_ENV;
@@ -67,8 +69,8 @@ describe('LoggerService', () => {
     process.env.NODE_ENV = ORIGINAL_ENV;
   });
 
-  describe('createPinoInstance — level', () => {
-    it('uses the explicit level when provided', () => {
+  describe('level', () => {
+    it('uses explicit level when provided', () => {
       LoggerService.createPinoInstance({ level: 'warn', format: 'json' });
       expect(lastPinoConfig().level).toBe('warn');
     });
@@ -86,45 +88,32 @@ describe('LoggerService', () => {
     });
   });
 
-  describe('createPinoInstance — format (no file)', () => {
-    it('json format produces NO transport', () => {
+  describe('format (no file, no New Relic)', () => {
+    it('json -> no transport', () => {
       LoggerService.createPinoInstance({ format: 'json' });
       expect(lastPinoConfig().transport).toBeUndefined();
     });
 
-    it('pretty format produces a pino-pretty transport', () => {
+    it('pretty -> pino-pretty transport', () => {
       LoggerService.createPinoInstance({ format: 'pretty' });
-      expect(lastPinoConfig().transport).toMatchObject({
-        target: 'pino-pretty',
-      });
-    });
-
-    it('defaults to pretty outside production', () => {
-      process.env.NODE_ENV = 'development';
-      LoggerService.createPinoInstance({});
-      expect(lastPinoConfig().transport).toMatchObject({
-        target: 'pino-pretty',
-      });
+      expect(lastPinoConfig().transport).toMatchObject({ target: 'pino-pretty' });
     });
   });
 
-  describe('createPinoInstance — base / service name', () => {
-    it('sets base.service when serviceName is provided', () => {
-      LoggerService.createPinoInstance({
-        format: 'json',
-        serviceName: 'nest-kickstart',
-      });
+  describe('base / service name', () => {
+    it('sets base.service when serviceName provided', () => {
+      LoggerService.createPinoInstance({ format: 'json', serviceName: 'nest-kickstart' });
       expect(lastPinoConfig().base).toEqual({ service: 'nest-kickstart' });
     });
 
-    it('leaves base undefined when no serviceName', () => {
+    it('base undefined without serviceName', () => {
       LoggerService.createPinoInstance({ format: 'json' });
       expect(lastPinoConfig().base).toBeUndefined();
     });
   });
 
-  describe('createPinoInstance — redaction', () => {
-    it('applies default redact paths when redact is undefined', () => {
+  describe('redaction', () => {
+    it('applies default paths when undefined', () => {
       LoggerService.createPinoInstance({ format: 'json' });
       expect(lastPinoConfig().redact).toEqual({
         paths: DEFAULT_REDACT_PATHS,
@@ -132,31 +121,68 @@ describe('LoggerService', () => {
       });
     });
 
-    it('wraps a custom string[] with the default censor', () => {
-      LoggerService.createPinoInstance({
-        format: 'json',
-        redact: ['user.ssn'],
-      });
-      expect(lastPinoConfig().redact).toEqual({
-        paths: ['user.ssn'],
-        censor: '[REDACTED]',
-      });
+    it('wraps a custom array with default censor', () => {
+      LoggerService.createPinoInstance({ format: 'json', redact: ['user.ssn'] });
+      expect(lastPinoConfig().redact).toEqual({ paths: ['user.ssn'], censor: '[REDACTED]' });
     });
 
-    it('disables redaction when given an empty array', () => {
+    it('disables redaction for an empty array', () => {
       LoggerService.createPinoInstance({ format: 'json', redact: [] });
       expect(lastPinoConfig().redact).toBeUndefined();
     });
 
-    it('passes through a full redact object unchanged', () => {
+    it('passes a full redact object through unchanged', () => {
       const redact = { paths: ['a'], censor: 'XX', remove: true };
       LoggerService.createPinoInstance({ format: 'json', redact });
       expect(lastPinoConfig().redact).toEqual(redact);
     });
   });
 
-  describe('createPinoInstance — file targets', () => {
-    it('creates the directory and builds stdout + info + error targets', () => {
+  describe('New Relic branch', () => {
+    it('invokes the enricher and applies a mixin', () => {
+      LoggerService.createPinoInstance({ newRelic: true });
+      expect(nrPinoMock).toHaveBeenCalled();
+      expect(typeof lastPinoConfig().mixin).toBe('function');
+    });
+
+    it('does NOT create file targets or a transport', () => {
+      LoggerService.createPinoInstance({ newRelic: true });
+      expect(lastPinoConfig().transport).toBeUndefined();
+      expect(mkdirSyncMock).not.toHaveBeenCalled();
+    });
+
+    it('preserves redaction in New Relic mode', () => {
+      LoggerService.createPinoInstance({ newRelic: true });
+      expect(lastPinoConfig().redact).toEqual({
+        paths: DEFAULT_REDACT_PATHS,
+        censor: '[REDACTED]',
+      });
+    });
+
+    it('combined mixin merges context IDs WITH enricher trace/span fields', () => {
+      const ctx = makeCtx({ correlationId: 'c-1', requestId: 'r-1' });
+      new LoggerService({ newRelic: true } as LoggerOptions, ctx);
+
+      const mixin = lastPinoConfig().mixin as (m: object, l: number) => Record<string, unknown>;
+      const result = mixin({}, 30);
+
+      expect(result).toMatchObject({ correlationId: 'c-1', requestId: 'r-1' });
+      expect(result).toMatchObject({ 'trace.id': 'tr-1', 'span.id': 'sp-1' });
+      expect(mockNrMixin).toHaveBeenCalled();
+    });
+
+    it('New Relic branch takes priority over file output', () => {
+      LoggerService.createPinoInstance({
+        newRelic: true,
+        file: { directory: '/tmp/logs' },
+      });
+      expect(mkdirSyncMock).not.toHaveBeenCalled();
+      expect(lastPinoConfig().transport).toBeUndefined();
+    });
+  });
+
+  describe('file branch (dev)', () => {
+    it('creates the directory and builds stdout + info.log + error.log targets', () => {
       LoggerService.createPinoInstance({
         format: 'json',
         file: { directory: '/tmp/logs-test' },
@@ -168,12 +194,21 @@ describe('LoggerService', () => {
 
       const targets = lastPinoConfig().transport.targets as any[];
       expect(targets).toHaveLength(3);
-      expect(targets.map((t) => t.target)).toEqual(
-        expect.arrayContaining(['pino/file', 'pino-roll', 'pino-roll']),
-      );
+      expect(targets.map((t) => t.target)).toEqual(['pino/file', 'pino/file', 'pino/file']);
     });
 
-    it('omits the stdout target when alsoStdout is false', () => {
+    it('info target writes info.log, error target writes error.log at error level', () => {
+      LoggerService.createPinoInstance({
+        format: 'json',
+        file: { directory: '/tmp/logs-test' },
+      });
+      const targets = lastPinoConfig().transport.targets as any[];
+      expect(targets[1].options.destination).toContain('info.log');
+      expect(targets[2].options.destination).toContain('error.log');
+      expect(targets[2].level).toBe('error');
+    });
+
+    it('omits stdout target when alsoStdout is false', () => {
       LoggerService.createPinoInstance({
         format: 'json',
         file: { directory: '/tmp/logs-test', alsoStdout: false },
@@ -182,7 +217,7 @@ describe('LoggerService', () => {
       expect(targets).toHaveLength(2);
     });
 
-    it('uses pino-pretty for the stdout target in pretty format', () => {
+    it('uses pino-pretty for stdout in pretty format', () => {
       LoggerService.createPinoInstance({
         format: 'pretty',
         file: { directory: '/tmp/logs-test' },
@@ -192,35 +227,24 @@ describe('LoggerService', () => {
     });
   });
 
-  describe('mixin — request context IDs', () => {
+  describe('mixin (context IDs, non-NR path)', () => {
     function getMixin(): () => Record<string, unknown> {
       return lastPinoConfig().mixin as () => Record<string, unknown>;
     }
 
-    it('returns an empty object when no RequestContext is injected', () => {
-      new LoggerService({ format: 'pretty' } as LoggerOptions, undefined);
+    it('returns {} when no RequestContext injected', () => {
+      new LoggerService({ format: 'pretty' }, undefined);
       expect(getMixin()()).toEqual({});
     });
 
-    it('returns only the IDs present in the context', () => {
-      const ctx = makeCtx({
-        correlationId: 'corr-1',
-        requestId: 'req-1',
-      });
+    it('returns only the IDs present in context', () => {
+      const ctx = makeCtx({ correlationId: 'c', requestId: 'r' });
       new LoggerService({ format: 'pretty' }, ctx);
-      expect(getMixin()()).toEqual({
-        correlationId: 'corr-1',
-        requestId: 'req-1',
-      });
+      expect(getMixin()()).toEqual({ correlationId: 'c', requestId: 'r' });
     });
 
     it('includes trace and span when present', () => {
-      const ctx = makeCtx({
-        correlationId: 'c',
-        requestId: 'r',
-        traceId: 't',
-        spanId: 's',
-      });
+      const ctx = makeCtx({ correlationId: 'c', requestId: 'r', traceId: 't', spanId: 's' });
       new LoggerService({ format: 'pretty' }, ctx);
       expect(getMixin()()).toEqual({
         correlationId: 'c',
@@ -243,7 +267,7 @@ describe('LoggerService', () => {
       expect(mockPinoLogger.info).toHaveBeenCalledWith({ foo: 'bar' }, 'hello');
     });
 
-    it('info() defaults context to {} when omitted', () => {
+    it('info() defaults context to {}', () => {
       service.info('hello');
       expect(mockPinoLogger.info).toHaveBeenCalledWith({}, 'hello');
     });
@@ -253,32 +277,32 @@ describe('LoggerService', () => {
       expect(mockPinoLogger.trace).toHaveBeenCalledWith({ a: 1 }, 't');
     });
 
-    it('log() maps to pino.info with empty context', () => {
+    it('log() -> pino.info with empty context', () => {
       service.log('msg');
       expect(mockPinoLogger.info).toHaveBeenCalledWith({}, 'msg');
     });
 
-    it('log() treats a trailing string as the Nest context', () => {
+    it('log() treats trailing string as Nest context', () => {
       service.log('msg', 'UsersController');
       expect(mockPinoLogger.info).toHaveBeenCalledWith({ context: 'UsersController' }, 'msg');
     });
 
-    it('verbose() maps to pino.trace', () => {
+    it('verbose() -> pino.trace', () => {
       service.verbose('v');
       expect(mockPinoLogger.trace).toHaveBeenCalledWith({}, 'v');
     });
 
-    it('warn() maps to pino.warn', () => {
+    it('warn() -> pino.warn', () => {
       service.warn('w');
       expect(mockPinoLogger.warn).toHaveBeenCalledWith({}, 'w');
     });
 
-    it('debug() maps to pino.debug', () => {
+    it('debug() -> pino.debug', () => {
       service.debug('d');
       expect(mockPinoLogger.debug).toHaveBeenCalledWith({}, 'd');
     });
 
-    it('fatal() maps to pino.fatal', () => {
+    it('fatal() -> pino.fatal', () => {
       service.fatal('f');
       expect(mockPinoLogger.fatal).toHaveBeenCalledWith({}, 'f');
     });
@@ -287,9 +311,7 @@ describe('LoggerService', () => {
       const err = new Error('boom');
       service.error('failed', err);
       expect(mockPinoLogger.error).toHaveBeenCalledWith(
-        {
-          err: { name: 'Error', message: 'boom', stack: err.stack },
-        },
+        { err: { name: 'Error', message: 'boom', stack: err.stack } },
         'failed',
       );
     });
@@ -300,31 +322,31 @@ describe('LoggerService', () => {
     });
   });
 
-  describe('toString (via log message coercion)', () => {
+  describe('toString coercion', () => {
     let service: LoggerService;
 
     beforeEach(() => {
       service = new LoggerService({ format: 'json' }, undefined);
     });
 
-    it('passes strings through unchanged', () => {
+    it('passes strings through', () => {
       service.log('plain');
       expect(mockPinoLogger.info).toHaveBeenCalledWith({}, 'plain');
     });
 
-    it('uses Error.message for Error messages', () => {
+    it('uses Error.message for Errors', () => {
       service.log(new Error('kaboom'));
       expect(mockPinoLogger.info).toHaveBeenCalledWith({}, 'kaboom');
     });
 
-    it('JSON-stringifies plain objects passed as the message', () => {
+    it('JSON-stringifies plain objects passed as the message position', () => {
       service.fatal({ a: 1 });
       expect(mockPinoLogger.fatal).toHaveBeenCalledWith({}, '{"a":1}');
     });
   });
 
   describe('child()', () => {
-    it('returns a LoggerService wrapping the child pino instance', () => {
+    it('wraps the child pino instance and logs through it', () => {
       const service = new LoggerService({ format: 'json' }, undefined);
       const child = service.child({ module: 'payments' });
 

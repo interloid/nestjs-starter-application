@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import pino, { Logger as PinoLogger, TransportTargetOptions } from 'pino';
 import { RequestContext } from '../common/context/request-context';
+import nrPino from '@newrelic/pino-enricher';
 
 export const LOGGER_OPTIONS = Symbol('LOGGER_OPTIONS');
 
@@ -35,9 +36,7 @@ export const DEFAULT_REDACT_PATHS: string[] = [
 
 export interface LoggerFileOptions {
   directory?: string;
-  retentionDays?: number;
   alsoStdout?: boolean;
-  cleanupCron?: string;
 }
 
 export interface LoggerOptions {
@@ -46,6 +45,7 @@ export interface LoggerOptions {
   serviceName?: string;
   file?: LoggerFileOptions;
   redact?: string[] | { paths: string[]; censor?: string; remove?: boolean };
+  newRelic?: boolean;
 }
 
 @Injectable()
@@ -90,6 +90,25 @@ export class LoggerService implements NestLoggerService {
       ...(redact ? { redact } : {}),
     };
 
+    if (options.newRelic) {
+      const nrConfig = nrPino();
+
+      const nrMixin = nrConfig.mixin as
+        ((mergeObject: object, level: number) => Record<string, unknown>) | undefined;
+
+      const combinedMixin = (mergeObject: object, level: number): Record<string, unknown> => ({
+        ...(contextProvider ? contextProvider() : {}),
+        ...(nrMixin ? nrMixin(mergeObject, level) : {}),
+      });
+
+      return pino({
+        ...baseConfig,
+        ...nrConfig,
+        mixin: combinedMixin,
+        ...(redact ? { redact } : {}),
+      });
+    }
+
     if (!options.file) {
       if (format === 'pretty') {
         return pino({
@@ -130,31 +149,15 @@ export class LoggerService implements NestLoggerService {
     }
 
     targets.push({
-      target: 'pino-roll',
+      target: 'pino/file',
       level,
-      options: {
-        file: resolve(directory, 'info'),
-        size: '10m',
-        frequency: 'daily',
-        extension: '.log',
-        dateFormat: 'yyyy-MM-dd',
-        mkdir: true,
-        limit: { count: 10 },
-      },
+      options: { destination: resolve(directory, 'info.log'), mkdir: true },
     });
 
     targets.push({
-      target: 'pino-roll',
+      target: 'pino/file',
       level: 'error',
-      options: {
-        file: resolve(directory, 'error'),
-        dateFormat: 'yyyy-MM-dd',
-        size: '10m',
-        frequency: 'daily',
-        extension: '.log',
-        mkdir: true,
-        limit: { count: 10 },
-      },
+      options: { destination: resolve(directory, 'error.log'), mkdir: true },
     });
 
     return pino({
