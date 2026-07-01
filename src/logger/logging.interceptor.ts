@@ -24,7 +24,9 @@ export class LoggingInterceptor implements NestInterceptor {
   }
 
   private write(req: Request, res: Response, start: number): void {
-    this.logger.info('request completed', {
+    const responseTimeMs = Date.now() - start;
+    const logMessage = `${req.method} ${req.originalUrl} ${res.statusCode} - ${responseTimeMs}ms`;
+    this.logger.info(logMessage, {
       method: req.method,
       url: req.originalUrl,
       statusCode: res.statusCode,

@@ -21,6 +21,10 @@ export const envSchema = z
       .transform((v) => v === 'true'),
 
     CSRF_SECRET: z.string().min(16).optional(),
+
+    GIT_COMMIT: z.string().default('unknown'),
+
+    BUILD_TIME: z.string().default('unknown'),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production') {
