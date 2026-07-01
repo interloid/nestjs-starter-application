@@ -13,7 +13,7 @@ import { Env } from '../config/env.validation';
     {
       provide: LOGGER_OPTIONS,
       useFactory: (config: ConfigService<Env, true>): LoggerOptions => {
-        const isProd = config.get('NODE_ENV', { infer: true }) === 'production';
+        const isProd = config.get('APP_ENV', { infer: true }) !== 'local';
         return {
           serviceName: 'nestjs-starter-application',
           level: config.get('LOG_LEVEL', { infer: true }),

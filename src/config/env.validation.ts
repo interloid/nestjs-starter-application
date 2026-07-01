@@ -2,6 +2,7 @@ import { z } from 'zod';
 export const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+    APP_ENV: z.enum(['local', 'development', 'staging', 'production']).default('local'),
     PORT: z.coerce.number().int().positive().default(8080),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
     NEW_RELIC_APP_NAME: z.string().optional(),
