@@ -2,11 +2,25 @@ import { z } from 'zod';
 export const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+
     APP_ENV: z.enum(['local', 'development', 'staging', 'production']).default('local'),
+
     PORT: z.coerce.number().int().positive().default(8080),
+
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+
     NEW_RELIC_APP_NAME: z.string().optional(),
+
     NEW_RELIC_LICENSE_KEY: z.string().optional(),
+
+    CORS_ORIGINS: z.string().default('http://localhost:3000'),
+
+    CSRF_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
+
+    CSRF_SECRET: z.string().min(16).optional(),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production') {
@@ -25,6 +39,14 @@ export const envSchema = z
           message: 'NEW_RELIC_LICENSE_KEY is required in production',
         });
       }
+    }
+    if (env.CSRF_ENABLED && (!env.CSRF_SECRET || env.CSRF_SECRET.trim().length < 16)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['CSRF_SECRET'],
+        message:
+          'CSRF_SECRET is required and must be at least 16 characters long when CSRF_ENABLED is true',
+      });
     }
   });
 
