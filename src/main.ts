@@ -6,8 +6,6 @@ import { Env } from './config/env.validation';
 import { LoggerService } from './logger/logger.service';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { cleanupOpenApiDoc } from 'nestjs-zod';
 
 const logger = new NestLogger();
 
@@ -32,17 +30,6 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'x-correlation-id', 'x-request-id'],
     exposedHeaders: ['x-correlation-id', 'x-request-id'],
   });
-
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Production Ready API')
-    .setVersion('1.0')
-    .build();
-
-  let document = SwaggerModule.createDocument(app, swaggerConfig);
-
-  document = cleanupOpenApiDoc(document, { version: 'auto' });
-
-  SwaggerModule.setup('api/docs', app, document);
 
   await app.listen(config.get('PORT', { infer: true }));
 }
