@@ -4,17 +4,17 @@ import { AppLoggerModule } from './logger/logger.module';
 import { APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { LoggingInterceptor } from './logger/logging.interceptor';
 import { ZodValidationPipe } from 'nestjs-zod';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { ThrottlerModule, ThrottlerGuard, seconds, minutes } from '@nestjs/throttler';
 import { CsrfGuard } from './csrf/csrf.guard';
 import { CsrfController } from './csrf/csrf.controller';
 import { CsrfService } from './csrf/csrf.service';
+import { HealthModule } from './observability/health/health.module';
 
 @Module({
   imports: [
     ConfigModule,
     AppLoggerModule,
+    HealthModule,
     ThrottlerModule.forRoot({
       throttlers: [
         { name: 'short', ttl: seconds(1), limit: 3 },
@@ -23,10 +23,9 @@ import { CsrfService } from './csrf/csrf.service';
       ],
     }),
   ],
-  controllers: [AppController, CsrfController],
+  controllers: [CsrfController],
 
   providers: [
-    AppService,
     CsrfService,
     { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
     { provide: APP_PIPE, useClass: ZodValidationPipe },
