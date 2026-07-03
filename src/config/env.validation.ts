@@ -25,6 +25,14 @@ export const envSchema = z
     GIT_COMMIT: z.string().default('unknown'),
 
     BUILD_TIME: z.string().default('unknown'),
+
+    SWAGGER_ENABLED: z
+      .preprocess((val) => {
+        if (val === 'true') return true;
+        if (val === 'false') return false;
+        return val;
+      }, z.boolean())
+      .default(false),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production') {

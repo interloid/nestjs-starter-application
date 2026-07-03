@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from './config/config.module';
 import { AppLoggerModule } from './logger/logger.module';
-import { APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { LoggingInterceptor } from './logger/logging.interceptor';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { ThrottlerModule, ThrottlerGuard, seconds, minutes } from '@nestjs/throttler';
@@ -9,6 +9,8 @@ import { CsrfGuard } from './csrf/csrf.guard';
 import { CsrfController } from './csrf/csrf.controller';
 import { CsrfService } from './csrf/csrf.service';
 import { HealthModule } from './observability/health/health.module';
+import { ResponseInterceptor } from './common/interceptors/response.interceptor';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 
 @Module({
   imports: [
@@ -31,6 +33,8 @@ import { HealthModule } from './observability/health/health.module';
     { provide: APP_PIPE, useClass: ZodValidationPipe },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: CsrfGuard },
+    { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
+    { provide: APP_FILTER, useClass: GlobalExceptionFilter },
   ],
 })
 export class AppModule {}
