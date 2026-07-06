@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same branch/PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Lint, Type-check, Test, Build
+    runs-on: ubuntu-latest
+
+    # Service containers for tests that need a real DB / Redis.
+    # Unit tests that mock Prisma/Redis ignore these; integration tests use them.
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: starter_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    env:
+      # Minimal env so the app/tests can boot. Secrets are fake CI values.
+      NODE_ENV: test
+      APP_ENV: local
+      PORT: '8080'
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/starter_test?schema=public
+      REDIS_URL: redis://localhost:6379/0
+      JWT_ACCESS_SECRET: ci-access-secret-ci-access-secret-32
+      JWT_REFRESH_SECRET: ci-refresh-secret-ci-refresh-secret-32
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 7d
+      FRONTEND_URL: http://localhost:3000
+      CORS_ORIGINS: http://localhost:3000
+      CSRF_ENABLED: 'false'
+      SWAGGER_ENABLED: 'false'
+      NEW_RELIC_ENABLED: 'false'
+      LOG_LEVEL: info
+      MAIL_FROM: no-reply@example.com
+      SMTP_HOST: localhost
+      SMTP_PORT: '587'
+      SMTP_USER: ci
+      SMTP_PASSWORD: ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Run migrations (test DB)
+        run: npx prisma migrate deploy
+
+      - name: Test (with coverage)
+        run: npm test -- --coverage --ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 7

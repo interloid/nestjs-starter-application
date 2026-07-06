@@ -28,6 +28,11 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
+ENV GIT_COMMIT=$GIT_COMMIT
+ENV BUILD_TIME=$BUILD_TIME
+
 USER app
 
 EXPOSE 8080

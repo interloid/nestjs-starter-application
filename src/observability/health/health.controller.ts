@@ -3,8 +3,10 @@ import { HealthCheck, HealthCheckService, MemoryHealthIndicator } from '@nestjs/
 import { SkipThrottle } from '@nestjs/throttler';
 import { SkipCsrf } from '../../common/decorators/skip-csrf.decorator';
 import { VersionService } from './version.service';
+import { Public } from '../../common/decorators/public.decorator';
 
 @SkipThrottle()
+@Public()
 @SkipCsrf()
 @Controller({ path: 'health', version: VERSION_NEUTRAL })
 export class HealthController {

@@ -69,7 +69,7 @@ async function main() {
   }
 
   const adminEmail = 'admin@example.com';
-  const passwordHash = await argon2.hash('ChangeMe123!');
+  const passwordHash = await argon2.hash('Admin@123');
   const adminUser = await prisma.user.upsert({
     where: { email: adminEmail },
     update: {},
