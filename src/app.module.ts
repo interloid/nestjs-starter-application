@@ -11,6 +11,13 @@ import { CsrfService } from './csrf/csrf.service';
 import { HealthModule } from './observability/health/health.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { PrismaModule } from './prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { UserModule } from './user/user.module';
+import { PermissionsGuard } from './common/guards/permission.guard';
+import { MailModule } from './mail/mail.module';
+import { QueueModule } from './queue/queue.module';
 
 @Module({
   imports: [
@@ -24,6 +31,11 @@ import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
         { name: 'default', ttl: minutes(1), limit: 100 },
       ],
     }),
+    PrismaModule,
+    UserModule,
+    AuthModule,
+    QueueModule,
+    MailModule,
   ],
   controllers: [CsrfController],
 
@@ -35,6 +47,8 @@ import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
     { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: PermissionsGuard },
   ],
 })
 export class AppModule {}

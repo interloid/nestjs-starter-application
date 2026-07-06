@@ -21,7 +21,7 @@ export class CsrfService {
       cookieName: 'x-csrf-token',
       cookieOptions: {
         httpOnly: true,
-        sameSite: 'none',
+        sameSite: 'lax',
         secure: this.config.get('NODE_ENV', { infer: true }) === 'production',
       },
       getCsrfTokenFromRequest: (req: Request) => req.headers['x-csrf-token'],
