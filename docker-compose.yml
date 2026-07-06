@@ -1,0 +1,52 @@
+services:
+  # ==========================================
+  # NestJS Application
+  # ==========================================
+  api:
+    container_name: nest-starter-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      # Point Redis at the internal service name (overrides .env for the container)
+      - REDIS_URL=redis://redis:6379/0
+      # DATABASE_URL intentionally NOT set here -> falls back to .env (external DB)
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # ==========================================
+  # Redis (cache + BullMQ)
+  # ==========================================
+  redis:
+    container_name: redis_cache
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - app-network
+
+volumes:
+  redisdata:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge

@@ -28,6 +28,7 @@ export class UserService {
         email,
         passwordHash,
         firstName: data.firstName,
+        avatarUrl: data.avatarUrl,
         lastName: data.lastName,
         roles: { create: { roleId: role.id } },
       },
@@ -85,6 +86,9 @@ export class UserService {
   }
 
   findAll() {
-    return this.prisma.user.findMany();
+    return this.prisma.user.findMany({
+      where: { deletedAt: null },
+      omit: { passwordHash: true },
+    });
   }
 }

@@ -88,7 +88,6 @@ describe('CsrfService', () => {
 
       prodService.generateToken(req as any, res as any);
 
-      // Assert that secure option was mapped as true in production environment
       const setCookieArgs = (res.cookie as jest.Mock).mock.calls[0][2];
       expect(setCookieArgs.secure).toBe(true);
     });

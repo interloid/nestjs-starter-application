@@ -91,8 +91,8 @@ export class AuthService {
     return { success: true };
   }
 
-  async logoutAll(rawRefreshToken: string) {
-    await this.tokens.revokeAllForUser(rawRefreshToken);
+  async logoutAll(userId: string) {
+    await this.tokens.revokeAllForUser(userId);
     return { success: true };
   }
 }

@@ -18,6 +18,7 @@ import { UserModule } from './user/user.module';
 import { PermissionsGuard } from './common/guards/permission.guard';
 import { MailModule } from './mail/mail.module';
 import { QueueModule } from './queue/queue.module';
+import { UploadModule } from './upload/upload.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { QueueModule } from './queue/queue.module';
     AuthModule,
     QueueModule,
     MailModule,
+    UploadModule,
   ],
   controllers: [CsrfController],
 

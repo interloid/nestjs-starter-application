@@ -7,6 +7,7 @@ const RegisterSchema = z.object({
   firstName: z.string().min(1).max(50).optional(),
   lastName: z.string().min(1).max(50).optional(),
   role: z.string().min(1).optional(),
+  avatarUrl: z.url().optional(),
 });
 export class RegisterDto extends createZodDto(RegisterSchema) {}
 
