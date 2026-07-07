@@ -1,119 +1,275 @@
-# nestjs-starter-application — Config & Logger
+# NestJS Starter Application
 
-This branch (`feature/logger-config-setup`) adds two foundations to the starter:
+A production-ready NestJS 11 backend starter with authentication, RBAC, observability, and a fully containerized workflow. Built as a foundation for new services — batteries included, opinionated where it matters, extensible everywhere else.
 
-1. **Configuration** — environment loading with Zod validation at boot.
-2. **Logging** — a structured Pino logger with request correlation, PII redaction, and New Relic integration.
+## Features
 
-Built on **NestJS 11**, **TypeScript 5 (strict)**, **Node.js 20 LTS**.
+- **Authentication** — JWT access + refresh tokens (rotation), local (email/password) strategy, argon2 password hashing
+- **Authorization** — role-based access control with granular permissions and a `manage` wildcard
+- **Email flows** — verification and password reset via single-use, expiring, hashed tokens
+- **Background jobs** — BullMQ + Redis for asynchronous email delivery with retries
+- **Database** — Prisma 7 with PostgreSQL, multi-file schema, migrations, and seeding
+- **Security** — Helmet, CORS, rate limiting, flag-gated CSRF protection, Zod input validation
+- **Observability** — structured logging (Pino), health checks (liveness/readiness), New Relic APM
+- **API standards** — consistent response envelope, global exception handling, pagination, URI versioning, Swagger docs
+- **Tooling** — ESLint, Prettier, Husky, lint-staged, Jest with coverage
+- **Containerized** — multi-stage Docker build, Docker Compose, GitHub Actions CI
 
-## Quick start
+## Tech Stack
+
+| Layer         | Technology                     |
+| ------------- | ------------------------------ |
+| Runtime       | Node.js 24 (LTS)               |
+| Framework     | NestJS 11                      |
+| Language      | TypeScript 5 (strict)          |
+| Database      | PostgreSQL + Prisma 7          |
+| Cache / Queue | Redis + BullMQ                 |
+| Validation    | Zod (`nestjs-zod`)             |
+| Auth          | Passport (JWT + Local), argon2 |
+| Logging       | Pino                           |
+| Monitoring    | New Relic APM                  |
+| Testing       | Jest                           |
+
+## Prerequisites
+
+- Node.js 24+
+- Docker & Docker Compose
+- PostgreSQL (local or remote)
+- Redis (or use the bundled Docker Compose service)
+
+## Getting Started
+
+### 1. Clone and install
 
 ```bash
+git clone https://github.com/interloid/nestjs-starter-application.git
+cd nestjs-starter-application
 npm install
+```
+
+### 2. Configure environment
+
+```bash
 cp .env.example .env
+```
+
+Fill in your values — see [Environment Variables](#environment-variables).
+
+### 3. Set up the database
+
+```bash
+npm run prisma:generate      # generate the Prisma client
+npm run prisma:migrate       # apply migrations (dev)
+npm run prisma:seed          # seed roles, permissions, admin user
+```
+
+Or in one step:
+
+```bash
+npm run db:setup             # deploy migrations + seed
+```
+
+### 4. Run
+
+**Local (hot reload):**
+
+```bash
 npm run start:dev
 ```
 
-The app boots on `http://localhost:8080` by default. Hit any route and you'll see a structured `request completed` log line carrying correlation and request IDs.
+**Docker (app + Redis):**
 
-## 1. Configuration
-
-Loaded via `@nestjs/config` and **validated at boot with Zod**. If any variable is missing or malformed, the app refuses to start (fail-fast).
-
-| Variable                | Type                                                         | Default       | Notes                                                |
-| ----------------------- | ------------------------------------------------------------ | ------------- | ---------------------------------------------------- |
-| `NODE_ENV`              | `development` \| `production` \| `test`                      | `development` | Drives log format (pretty vs JSON) and default level |
-| `PORT`                  | number                                                       | `8080`        | HTTP port                                            |
-| `LOG_LEVEL`             | `fatal` \| `error` \| `warn` \| `info` \| `debug` \| `trace` | `debug`       | Pino log level                                       |
-| `NEW_RELIC_APP_NAME`    | string                                                       | —             | Application name reported to New Relic               |
-| `NEW_RELIC_LICENSE_KEY` | string                                                       | —             | New Relic ingest license key                         |
-
-`.env.example`:
-
-```dotenv
-# =========================
-# Server Configuration
-# =========================
-PORT=8080
-NODE_ENV=development
-
-# =========================
-# Logging Configuration
-# =========================
-LOG_LEVEL=debug
-
-# Available levels:
-# fatal | error | warn | info | debug | trace
-
-# =========================
-# New Relic Configuration
-# =========================
-NEW_RELIC_APP_NAME=nestjs-starter-app
-NEW_RELIC_LICENSE_KEY=YOUR_NEW_RELIC_LICENSE_KEY
+```bash
+npm run docker:up
 ```
 
-The schema lives in `src/config/env.validation.ts`. Add new variables there — they're typed end-to-end via `z.infer`, so `ConfigService<Env, true>.get('NAME', { infer: true })` is fully type-safe.
+The API is available at `http://localhost:8080/api/v1`.
 
-## 2. Logging
+## Environment Variables
 
-A custom `LoggerService` wraps [Pino](https://getpino.io) and implements Nest's `LoggerService` interface, so it serves as the app-wide logger (`app.useLogger(...)` in `main.ts`).
+| Variable                      | Description                                    | Default                  |
+| ----------------------------- | ---------------------------------------------- | ------------------------ |
+| `NODE_ENV`                    | Build mode (`development`/`production`/`test`) | `development`            |
+| `APP_ENV`                     | Deployment target (`local`/`cloud`)            | `local`                  |
+| `PORT`                        | Server port                                    | `8080`                   |
+| `DATABASE_URL`                | PostgreSQL connection string                   | —                        |
+| `REDIS_URL`                   | Redis connection string                        | `redis://localhost:6379` |
+| `JWT_ACCESS_SECRET`           | Access token secret (≥32 chars)                | —                        |
+| `JWT_REFRESH_SECRET`          | Refresh token secret (≥32 chars)               | —                        |
+| `JWT_ACCESS_TTL`              | Access token lifetime                          | `15m`                    |
+| `JWT_REFRESH_TTL`             | Refresh token lifetime                         | `7d`                     |
+| `FRONTEND_URL`                | Frontend base URL (for email links)            | `http://localhost:3000`  |
+| `CORS_ORIGINS`                | Comma-separated allowed origins                | `http://localhost:3000`  |
+| `CSRF_ENABLED`                | Enable CSRF protection                         | `false`                  |
+| `CSRF_SECRET`                 | CSRF signing secret                            | —                        |
+| `SMTP_HOST` / `SMTP_PORT`     | SMTP server                                    | —                        |
+| `SMTP_USER` / `SMTP_PASSWORD` | SMTP credentials                               | —                        |
+| `SMTP_SECURE`                 | TLS (`true` for 465, `false` for 587)          | `false`                  |
+| `MAIL_FROM`                   | Sender address                                 | —                        |
+| `NEW_RELIC_ENABLED`           | Enable New Relic agent                         | `false`                  |
+| `NEW_RELIC_LICENSE_KEY`       | New Relic license key                          | —                        |
+| `SWAGGER_ENABLED`             | Expose Swagger docs                            | `true`                   |
+| `LOG_LEVEL`                   | Pino log level                                 | `info`                   |
+| `GIT_COMMIT`                  | Deployed commit (injected at build)            | `unknown`                |
 
-### Features
+> **Never commit `.env`.** Secrets are injected at runtime. Use `.env.example` as the template.
 
-- **Format by environment** — colorized pretty logs in development, raw structured JSON in production (`NODE_ENV=production`).
-- **Service name** — every line carries `service: "nestjs-starter-application"`.
-- **ISO timestamps**.
-- **PII redaction** — a default deny-list (`password`, `token`, `accessToken`, `refreshToken`, `apiKey`, `secret`, `authorization`, `cookie`, and common header paths) is replaced with `[REDACTED]`. Override or disable per instance via the `redact` option.
-- **Request correlation** — every log emitted during an HTTP request automatically carries `correlationId` and `requestId` (with `traceId`/`spanId` reserved for when OpenTelemetry is added).
-- **New Relic integration** — logs are enriched with New Relic linking metadata (`@newrelic/pino-enricher`) so they correlate with APM traces in the New Relic UI.
+## Project Structure
 
-### How request IDs flow
+```
+src/
+├── bootstrap/          # startup wiring (helmet, cors, swagger, versioning)
+├── common/             # shared decorators, guards, interceptors, filters, DTOs
+├── config/             # environment validation (Zod)
+├── logger/             # Pino logger service
+├── prisma/             # Prisma service + module
+├── mail/               # mail service, queue, processor
+├── queue/              # BullMQ root connection
+├── auth/               # auth service, strategies, token services, guards
+├── user/               # user service
+├── observability/
+│   └── health/         # health checks + version endpoint
+└── main.ts             # thin bootstrap
 
-1. `CorrelationIdMiddleware` runs first on every request. It reads an inbound `x-correlation-id` / `x-request-id` header or generates a UUID, echoes both back on the response, and stores them in a `RequestContext` (backed by `AsyncLocalStorage`).
-2. The middleware calls `next()` **inside** `RequestContext.run(...)`, so the context propagates through controllers, services, and every log call in that request.
-3. Pino's `mixin` reads the IDs from `RequestContext` and attaches them to each line.
-4. `LoggingInterceptor` emits one `request completed` line per request with `method`, `url`, `statusCode`, and `responseTimeMs` — routed through `LoggerService`, so it inherits redaction and IDs.
+prisma/
+├── schema.prisma       # generator + datasource
+├── models/             # domain models (user, rbac, token, enums)
+├── migrations/
+└── seed.ts
+```
 
-Example production line:
+## Available Scripts
+
+| Script                          | Description                    |
+| ------------------------------- | ------------------------------ |
+| `npm run start:dev`             | Run with hot reload            |
+| `npm run build`                 | Compile to `dist/`             |
+| `npm run lint`                  | Lint and auto-fix              |
+| `npm test`                      | Run unit tests                 |
+| `npm run test:cov`              | Tests with coverage            |
+| `npm run prisma:migrate`        | Create + apply a dev migration |
+| `npm run prisma:migrate:deploy` | Apply migrations (prod/CI)     |
+| `npm run prisma:seed`           | Seed the database              |
+| `npm run prisma:studio`         | Open Prisma Studio             |
+| `npm run docker:up`             | Build + run via Docker Compose |
+| `npm run docker:down`           | Stop containers                |
+
+## API Overview
+
+All routes are prefixed with `/api/v1`. Health checks are unversioned at `/health`.
+
+### Authentication
+
+| Method | Endpoint                | Description               | Auth     |
+| ------ | ----------------------- | ------------------------- | -------- |
+| `POST` | `/auth/register`        | Register a new user       | Public   |
+| `POST` | `/auth/login`           | Log in, receive tokens    | Public   |
+| `POST` | `/auth/refresh`         | Rotate refresh token      | Public   |
+| `POST` | `/auth/logout`          | Revoke current session    | Required |
+| `POST` | `/auth/logout-all`      | Revoke all sessions       | Required |
+| `POST` | `/auth/verify-email`    | Verify email address      | Public   |
+| `POST` | `/auth/forgot-password` | Request password reset    | Public   |
+| `POST` | `/auth/reset-password`  | Reset password with token | Public   |
+
+### Users
+
+| Method | Endpoint    | Description          | Permission    |
+| ------ | ----------- | -------------------- | ------------- |
+| `GET`  | `/users/me` | Current user profile | Authenticated |
+| `GET`  | `/users`    | List users           | `users:get`   |
+
+### Health
+
+| Method | Endpoint        | Description                        |
+| ------ | --------------- | ---------------------------------- |
+| `GET`  | `/health/live`  | Liveness (restart signal)          |
+| `GET`  | `/health/ready` | Readiness (dependencies + version) |
+
+### Response Envelope
 
 ```json
 {
-  "level": 30,
-  "time": "2026-06-30T12:17:14.543Z",
-  "service": "nestjs-starter-application",
-  "correlationId": "ee3c688e-...",
-  "requestId": "5026b36a-...",
-  "method": "GET",
-  "url": "/",
+  "success": true,
   "statusCode": 200,
-  "responseTimeMs": 2,
-  "msg": "request completed"
+  "message": "OK",
+  "data": {},
+  "timestamp": "2026-07-06T12:00:00Z",
+  "path": "/api/v1/users/me",
+  "requestId": "..."
 }
 ```
 
-### New Relic setup
+### API Documentation
 
-New Relic is configured via the `newrelic` package and enriches Pino logs via `@newrelic/pino-enricher`, so structured logs can be correlated with APM traces in the New Relic dashboard.
+When `SWAGGER_ENABLED=true`, interactive docs are at `/docs`.
 
-Required environment variables:
+## Authorization Model
 
-```dotenv
-NEW_RELIC_APP_NAME=nestjs-starter-app
-NEW_RELIC_LICENSE_KEY=YOUR_NEW_RELIC_LICENSE_KEY
+Access control is role-based with granular permissions:
+
+- **Permissions** use a `resource:action` format (e.g. `users:update`).
+- **Actions**: `get`, `update`, `delete`, `manage`.
+- **`manage`** is a wildcard — `users:manage` satisfies any `users:*` requirement, but a specific action never satisfies a required `manage` (grants expand down, never up).
+- **Roles** bundle permissions; users are assigned roles.
+
+Protect a route:
+
+```typescript
+@RequirePermission('users:update')
+@Patch(':id')
+updateUser() {}
 ```
 
-The agent is loaded at process start via `-r newrelic` in the production start script:
+Mark public routes with `@Public()`.
 
-```json
-"start:prod": "node -r dotenv/config -r newrelic dist/main"
-```
-
-> **Note:** in `start:dev`/`start:debug` the New Relic agent isn't preloaded by default. If you want APM data locally, add `-r newrelic` to those scripts as well, or set `NEW_RELIC_ENABLED=false` to suppress agent warnings in development.
-
-### Required packages
+## Testing
 
 ```bash
-npm install pino @newrelic/pino-enricher newrelic
-npm install --save-dev pino-pretty
+npm test               # unit tests
+npm run test:cov       # with coverage
+npm run test:e2e       # end-to-end tests
 ```
+
+## Database Migrations
+
+**Development** — create and apply a migration:
+
+```bash
+npm run prisma:migrate -- --name describe_your_change
+```
+
+**Production / CI** — apply committed migrations only:
+
+```bash
+npm run prisma:migrate:deploy
+```
+
+> Author migrations locally with `migrate dev`, commit `prisma/migrations/`, and apply them in production with `migrate deploy`. Never run `migrate dev` in production.
+
+## Docker
+
+The multi-stage `Dockerfile` produces a lean production image; `docker-compose.yml` runs the app alongside Redis.
+
+```bash
+npm run docker:up      # build (with commit injected) + start
+npm run docker:down    # stop
+```
+
+The commit SHA and build time are injected at build time and exposed at `/health/ready` for deploy verification.
+
+## CI
+
+GitHub Actions runs on every push and PR to `main`: lint, type-check, test (with coverage), and build, against Postgres and Redis service containers. See `.github/workflows/ci.yml`.
+
+## Default Seed Credentials
+
+After seeding, an admin account is created:
+
+- **Email:** `admin@example.com`
+- **Password:** `Admin@123`
+
+> Change these immediately in any non-local environment.
+
+## License
+
+[Specify your license — e.g. MIT]

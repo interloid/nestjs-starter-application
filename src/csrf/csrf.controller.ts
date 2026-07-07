@@ -9,7 +9,7 @@ export class CsrfController {
 
   @SkipCsrf()
   @Get()
-  getToken(@Req() req: Request, @Res() res: Response) {
+  getToken(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const token = this.csrf.generateToken(req, res);
     return { csrfToken: token };
   }

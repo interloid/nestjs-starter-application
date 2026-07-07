@@ -7,7 +7,15 @@ export function setupSwagger(app: INestApplication): void {
     .setTitle('NestJS Starter API')
     .setDescription('API documentation for the NestJS starter')
     .setVersion('1.0')
-    .addBearerAuth()
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        in: 'header',
+      },
+      'JWT-auth',
+    )
     .addCookieAuth('access_token')
     .build();
 

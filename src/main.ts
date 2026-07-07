@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { VersioningType } from '@nestjs/common';
 import { setupSwagger } from './common/swagger/swagger.setup';
+import { Server } from 'http';
 
 const logger = new NestLogger();
 
@@ -44,7 +45,37 @@ async function bootstrap() {
     setupSwagger(app);
   }
 
-  await app.listen(config.get('PORT', { infer: true }));
+  const port = config.get('PORT', { infer: true });
+
+  const server = (await app.listen(port)) as Server;
+
+  logger.log(`Application successfully listening on port: ${port}`);
+  const handleShutdown = (signal: string) => {
+    logger.warn(`Received ${signal}. Starting graceful shutdown sequence...`);
+
+    server.close((err) => {
+      if (err) {
+        logger.error(`Error closing HTTP server connections gracefully:`, err);
+        process.exit(1);
+      }
+
+      logger.log('HTTP server connections drained. Closing NestJS container...');
+
+      app
+        .close()
+        .then(() => {
+          logger.log('NestJS application destroyed. Safe shutdown complete.');
+          process.exit(0);
+        })
+        .catch((closeErr) => {
+          logger.error('Error during NestJS container destruction:', closeErr);
+          process.exit(1);
+        });
+    });
+  };
+
+  process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+  process.on('SIGINT', () => handleShutdown('SIGINT'));
 }
 bootstrap().catch((err) => {
   logger.error(err);

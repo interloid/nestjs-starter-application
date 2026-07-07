@@ -33,6 +33,36 @@ export const envSchema = z
         return val;
       }, z.boolean())
       .default(false),
+
+    DATABASE_URL: z.url(),
+
+    JWT_ACCESS_SECRET: z.string().min(32),
+    JWT_REFRESH_SECRET: z.string().min(32),
+    JWT_ACCESS_TTL: z.string().default('15m'),
+    JWT_REFRESH_TTL: z.string().default('7d'),
+
+    REDIS_URL: z.url(),
+
+    FRONTEND_URL: z.url(),
+
+    SMTP_HOST: z.string(),
+    SMTP_PORT: z.coerce.number().default(587),
+    SMTP_USER: z.string(),
+    SMTP_PASSWORD: z.string(),
+    MAIL_FROM: z.email().default('no-reply@example.com'),
+
+    COOKIE_AUTH: z
+      .preprocess((val) => {
+        if (val === 'true') return true;
+        if (val === 'false') return false;
+        return val;
+      }, z.boolean())
+      .default(false),
+
+    AWS_ACCESS_KEY_ID: z.string().min(1, 'AWS Access Key is required'),
+    AWS_SECRET_ACCESS_KEY: z.string().min(1, 'AWS Secret Access Key is required'),
+    AWS_REGION: z.string().min(1, 'AWS Region is required').default('us-east-1'),
+    AWS_S3_BUCKET_NAME: z.string().min(1, 'S3 Bucket Name is required'),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production') {
@@ -58,6 +88,14 @@ export const envSchema = z
         path: ['CSRF_SECRET'],
         message:
           'CSRF_SECRET is required and must be at least 16 characters long when CSRF_ENABLED is true',
+      });
+    }
+    if (env.COOKIE_AUTH && !env.CSRF_ENABLED) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['CSRF_ENABLED'],
+        message:
+          'CSRF_ENABLED must be true when COOKIE_AUTH is enabled to prevent cross-site exploits',
       });
     }
   });
