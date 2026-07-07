@@ -76,20 +76,8 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Debug environment
-        run: |
-          node -v
-          npm -v
-          git rev-parse HEAD
-          pwd
-          ls -la
-          echo "React in package.json:"
-          grep '"react"' package.json || true
-          echo "React in package-lock.json:"
-          grep '"react"' package-lock.json | head -20 || true
-
       - name: Install dependencies
-        run: npm ci
+        run: npm i
 
       - name: Generate Prisma client
         run: npx prisma generate
