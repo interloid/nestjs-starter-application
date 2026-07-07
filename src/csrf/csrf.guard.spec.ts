@@ -1,4 +1,3 @@
-
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
@@ -10,7 +9,6 @@ const mockValidateRequest = jest.fn();
 jest.mock('csrf-csrf', () => ({
   doubleCsrf: jest.fn(() => ({ validateRequest: mockValidateRequest })),
 }));
-
 
 type Flags = Partial<Record<'CSRF_ENABLED' | 'CSRF_SECRET' | 'NODE_ENV', string | boolean>>;
 
@@ -48,7 +46,6 @@ function mockContext(method = 'POST'): ExecutionContext {
 describe('CsrfGuard', () => {
   afterEach(() => jest.clearAllMocks());
 
-
   describe('when CSRF is disabled', () => {
     it('allows all requests without validating', () => {
       const guard = new CsrfGuard(makeReflector(), makeConfig({ CSRF_ENABLED: false }));
@@ -57,7 +54,6 @@ describe('CsrfGuard', () => {
     });
   });
 
-
   describe('when enabled but secret is missing', () => {
     it('throws at construction', () => {
       expect(
@@ -65,7 +61,6 @@ describe('CsrfGuard', () => {
       ).toThrow('CSRF_ENABLED is true but CSRF_SECRET is not set');
     });
   });
-
 
   describe('when CSRF is enabled', () => {
     it('allows safe methods without validation (GET/HEAD/OPTIONS)', () => {
@@ -85,14 +80,13 @@ describe('CsrfGuard', () => {
     it('checks the reflector on handler and class for @SkipCsrf', () => {
       const reflector = makeReflector(false);
       const guard = new CsrfGuard(reflector, makeConfig({}));
+      const spy = jest.spyOn(reflector, 'getAllAndOverride');
+
       mockValidateRequest.mockReturnValueOnce(true);
 
       guard.canActivate(mockContext('POST'));
 
-      expect(reflector.getAllAndOverride).toHaveBeenCalledWith(SKIP_CSRF_KEY, [
-        'handlerRef',
-        'classRef',
-      ]);
+      expect(spy).toHaveBeenCalledWith(SKIP_CSRF_KEY, ['handlerRef', 'classRef']);
     });
 
     it('passes a state-changing request when the token is valid', () => {

@@ -5,12 +5,12 @@ import type { Request, Response } from 'express';
 
 describe('CsrfService', () => {
   let service: CsrfService;
-  let mockConfigService: jest.Mocked<ConfigService>;
+  let mockConfigService: Pick<ConfigService, 'get'>;
 
-  const createTestingModule = (configPairs: Record<string, any>) => {
+  const createTestingModule = (configPairs: Record<string, unknown>) => {
     mockConfigService = {
       get: jest.fn().mockImplementation((key: string) => configPairs[key]),
-    } as any;
+    };
 
     return Test.createTestingModule({
       providers: [
@@ -58,7 +58,9 @@ describe('CsrfService', () => {
       const req = { ip: '127.0.0.1', cookies: {} };
       const res = { cookie: jest.fn() };
 
-      expect(() => devService.generateToken(req as Request, res as Response)).not.toThrow();
+      expect(() =>
+        devService.generateToken(req as Request, res as unknown as Response),
+      ).not.toThrow();
     });
 
     it('should use an empty string as session identifier if req.ip is missing', async () => {
@@ -72,7 +74,9 @@ describe('CsrfService', () => {
       const req = { ip: undefined, cookies: {} };
       const res = { cookie: jest.fn() };
 
-      expect(() => ipService.generateToken(req as any, res as any)).not.toThrow();
+      expect(() =>
+        ipService.generateToken(req as Request, res as unknown as Response),
+      ).not.toThrow();
     });
 
     it('should set secure cookie configuration to true if NODE_ENV is production', async () => {
@@ -86,9 +90,9 @@ describe('CsrfService', () => {
       const req = { ip: '127.0.0.1', cookies: {} };
       const res = { cookie: jest.fn() };
 
-      prodService.generateToken(req as any, res as any);
+      prodService.generateToken(req as Request, res as unknown as Response);
 
-      const setCookieArgs = (res.cookie as jest.Mock).mock.calls[0][2];
+      const setCookieArgs = res.cookie.mock.calls[0][2];
       expect(setCookieArgs.secure).toBe(true);
     });
   });

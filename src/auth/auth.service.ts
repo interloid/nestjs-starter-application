@@ -45,6 +45,7 @@ export class AuthService {
   }
 
   private sanitize(user: User) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { passwordHash, deletedAt, ...safe } = user;
     return safe;
   }

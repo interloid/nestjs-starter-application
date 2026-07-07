@@ -3,23 +3,28 @@ import { ConfigService } from '@nestjs/config';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { mockClient } from 'aws-sdk-client-mock';
 import { UploadService } from './upload.service';
+import * as crypto from 'node:crypto';
 
 let mockUuidValue = '12345678-abcd-ef01-2345-6789abcdef01';
-jest.mock('crypto', () => ({
-  ...jest.requireActual('crypto'),
-  randomUUID: () => mockUuidValue,
-}));
+
+jest.mock('node:crypto', () => {
+  const actual = jest.requireActual<typeof crypto>('node:crypto');
+
+  return {
+    ...actual,
+    randomUUID: jest.fn(() => mockUuidValue),
+  };
+});
 
 const s3Mock = mockClient(S3Client);
 
 describe('Upload Service', () => {
   let service: UploadService;
-  let configService: ConfigService;
 
-  const mockConfigValues = {
+  const mockConfigValues: Record<string, string> = {
     AWS_REGION: 'ap-south-1',
-    AWS_ACCESS_KEY_ID: 'mock-access-key-id',
-    AWS_SECRET_ACCESS_KEY: 'mock-secret-access-key',
+    AWS_ACCESS_KEY_ID: 'access-key',
+    AWS_SECRET_ACCESS_KEY: 'secret-key',
     AWS_S3_BUCKET_NAME: 'mock-bucket-name',
   };
 
@@ -39,7 +44,6 @@ describe('Upload Service', () => {
     }).compile();
 
     service = module.get<UploadService>(UploadService);
-    configService = module.get<ConfigService>(ConfigService);
   });
 
   describe('uploadProfileImage', () => {

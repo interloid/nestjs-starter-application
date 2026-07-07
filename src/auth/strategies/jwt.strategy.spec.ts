@@ -54,7 +54,7 @@ describe('JwtStrategy', () => {
 
   describe('validate — valid user', () => {
     it('loads the user by payload.sub with roles', async () => {
-      users.findByIdWithRoles.mockResolvedValueOnce(userWithRoles() as never);
+      users.findByIdWithRoles.mockResolvedValueOnce(userWithRoles());
 
       await strategy.validate(PAYLOAD);
 
@@ -62,7 +62,7 @@ describe('JwtStrategy', () => {
     });
 
     it('flattens roles and permissions onto the returned user', async () => {
-      users.findByIdWithRoles.mockResolvedValueOnce(userWithRoles() as never);
+      users.findByIdWithRoles.mockResolvedValueOnce(userWithRoles());
 
       const result = await strategy.validate(PAYLOAD);
 
@@ -76,7 +76,7 @@ describe('JwtStrategy', () => {
     });
 
     it('returns empty roles/permissions when the user has no roles', async () => {
-      users.findByIdWithRoles.mockResolvedValueOnce(userWithRoles({ roles: [] }) as never);
+      users.findByIdWithRoles.mockResolvedValueOnce(userWithRoles({ roles: [] }));
 
       const result = await strategy.validate(PAYLOAD);
 
@@ -93,16 +93,14 @@ describe('JwtStrategy', () => {
     });
 
     it('throws when the user is soft-deleted', async () => {
-      users.findByIdWithRoles.mockResolvedValueOnce(
-        userWithRoles({ deletedAt: new Date() }) as never,
-      );
+      users.findByIdWithRoles.mockResolvedValueOnce(userWithRoles({ deletedAt: new Date() }));
 
       await expect(strategy.validate(PAYLOAD)).rejects.toThrow(UnauthorizedException);
     });
 
     it('throws when the user is suspended (status false)', async () => {
       users.findByIdWithRoles.mockResolvedValueOnce(
-        userWithRoles({ status: false }) as never, // ← boolean false, not 'SUSPENDED'
+        userWithRoles({ status: false }), // ← boolean false, not 'SUSPENDED'
       );
 
       await expect(strategy.validate(PAYLOAD)).rejects.toThrow(UnauthorizedException);

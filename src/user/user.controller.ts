@@ -13,6 +13,7 @@ export class UserController {
   @ApiBearerAuth('JWT-auth')
   async me(@CurrentUser() user: AuthenticatedUser) {
     const profile = await this.users.findById(user.id);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { passwordHash, deletedAt, ...safe } = profile;
     return {
       ...safe,

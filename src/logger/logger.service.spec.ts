@@ -176,6 +176,7 @@ describe('LoggerService', () => {
   describe('createPinoInstance - New Relic integration', () => {
     it('merges contextProvider and New Relic mixin output', () => {
       nrPinoMock.mockReturnValue({
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         mixin: jest.fn((_merge: object, _level: number) => ({ nr: true })),
         someNrOption: 'x',
       });

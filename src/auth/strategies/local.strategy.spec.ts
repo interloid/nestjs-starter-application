@@ -1,4 +1,3 @@
-
 import { BadRequestException } from '@nestjs/common';
 import { User } from '@prisma/client';
 import { LocalStrategy } from './local.strategy';
@@ -29,7 +28,6 @@ describe('LocalStrategy', () => {
   });
 
   afterEach(() => jest.clearAllMocks());
-
 
   describe('credential rejection (enumeration-safe)', () => {
     it('throws generic "Invalid credentials" when the user does not exist', async () => {
@@ -71,7 +69,6 @@ describe('LocalStrategy', () => {
     });
   });
 
-
   describe('email verification gate', () => {
     it('throws BadRequestException when email is not verified', async () => {
       users.findByEmailWithPassword.mockResolvedValueOnce({
@@ -86,7 +83,6 @@ describe('LocalStrategy', () => {
     });
   });
 
-
   describe('status gate', () => {
     it('throws UnauthorizedException when the account is inactive (status false)', async () => {
       users.findByEmailWithPassword.mockResolvedValueOnce({
@@ -100,7 +96,6 @@ describe('LocalStrategy', () => {
       );
     });
   });
-
 
   describe('success', () => {
     it('returns the user when credentials, verification, and status all pass', async () => {

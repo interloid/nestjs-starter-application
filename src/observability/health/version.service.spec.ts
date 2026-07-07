@@ -18,7 +18,7 @@ describe('VersionService', () => {
         {
           provide: ConfigService,
           useValue: {
-            get: jest.fn((key: string) => mockConfigValues[key]),
+            get: jest.fn((key: string): unknown => mockConfigValues[key]),
           },
         },
       ],
@@ -34,10 +34,12 @@ describe('VersionService', () => {
 
   describe('info (getter)', () => {
     it('should correctly fetch and return git commit and build time from configuration settings', () => {
+      const getSpy = jest.spyOn(configService, 'get');
+
       const result = service.info;
 
-      expect(configService.get).toHaveBeenCalledWith('GIT_COMMIT', { infer: true });
-      expect(configService.get).toHaveBeenCalledWith('BUILD_TIME', { infer: true });
+      expect(getSpy).toHaveBeenCalledWith('GIT_COMMIT', { infer: true });
+      expect(getSpy).toHaveBeenCalledWith('BUILD_TIME', { infer: true });
 
       expect(result).toEqual({
         commit: 'abcdef1234567890',

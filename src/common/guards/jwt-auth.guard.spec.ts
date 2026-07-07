@@ -35,11 +35,11 @@ describe('JwtAuthGuard', () => {
     expect(superSpy).not.toHaveBeenCalled();
   });
 
-  it('queries the reflector on both handler and class', () => {
+  it('queries the reflector on both handler and class', async () => {
     reflector.getAllAndOverride.mockReturnValueOnce(true);
     const ctx = mockContext();
 
-    guard.canActivate(ctx);
+    await guard.canActivate(ctx);
 
     expect(reflector.getAllAndOverride).toHaveBeenCalledWith(IS_PUBLIC_KEY, [
       'handlerRef',

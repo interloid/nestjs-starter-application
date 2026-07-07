@@ -6,7 +6,7 @@ jest.mock('@prisma/client', () => ({
   PrismaClient: class {
     $connect = jest.fn().mockResolvedValue(undefined);
     $disconnect = jest.fn().mockResolvedValue(undefined);
-    constructor(_opts?: unknown) {}
+    // constructor(_opts?: unknown) {}
   },
 }));
 

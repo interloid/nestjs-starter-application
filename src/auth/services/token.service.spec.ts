@@ -65,7 +65,6 @@ describe('TokenService', () => {
 
   afterEach(() => jest.clearAllMocks());
 
-
   describe('issueTokens', () => {
     beforeEach(() => {
       jwt.signAsync
@@ -141,7 +140,6 @@ describe('TokenService', () => {
     });
   });
 
-
   describe('hashToken', () => {
     it('produces a stable SHA-256 hex digest', () => {
       expect(service.hashToken('abc')).toBe(sha256('abc'));
@@ -152,7 +150,6 @@ describe('TokenService', () => {
       expect(service.hashToken('abc')).not.toBe(service.hashToken('abd'));
     });
   });
-
 
   describe('refreshTokens', () => {
     const validStored = {
@@ -227,7 +224,6 @@ describe('TokenService', () => {
     });
   });
 
-
   describe('revokeRefreshToken', () => {
     it('revokes by hash, only rows not already revoked', async () => {
       await service.revokeRefreshToken('some-token');
@@ -249,7 +245,6 @@ describe('TokenService', () => {
       });
     });
   });
-
 
   describe('refresh expiry / ttlToMs parsing', () => {
     const parse = (ttl: string): number =>

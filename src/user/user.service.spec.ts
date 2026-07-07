@@ -1,10 +1,9 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { User } from '@prisma/client';
 import { UserService } from './user.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PasswordService } from '../auth/services/password.service';
 
-const USER: User = {
+const USER = {
   id: 'user-1',
   email: 'user@example.com',
   emailVerified: false,
@@ -18,7 +17,6 @@ const USER: User = {
   updatedAt: new Date('2026-01-01T00:00:00Z'),
   deletedAt: null,
 };
-
 const ROLE = { id: 'role-1', name: 'user' };
 
 describe('UserService', () => {
@@ -58,7 +56,7 @@ describe('UserService', () => {
 
   describe('create', () => {
     const dto = {
-      email: 'User@Example.com',  
+      email: 'User@Example.com',
       password: 'pw',
       firstName: 'Test',
       lastName: 'User',

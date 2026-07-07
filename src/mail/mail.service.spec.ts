@@ -2,7 +2,7 @@ const mockSendMail = jest.fn().mockResolvedValue({ messageId: 'abc' });
 const mockCreateTransport = jest.fn().mockReturnValue({ sendMail: mockSendMail });
 
 jest.mock('nodemailer', () => ({
-  createTransport: (...args: unknown[]) => mockCreateTransport(...args),
+  createTransport: mockCreateTransport,
 }));
 
 import { ConfigService } from '@nestjs/config';
