@@ -129,20 +129,29 @@ jobs:
           # Create .env from CI env vars so compose can load it
           cat > .env << EOF
           NODE_ENV=production
-          APP_ENV=local
+          APP_ENV=production
           PORT=8080
-          DATABASE_URL=${DATABASE_URL}
-          REDIS_URL=redis://redis:6379/0
-          JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
-          JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
-          JWT_ACCESS_TTL=${JWT_ACCESS_TTL}
-          JWT_REFRESH_TTL=${JWT_REFRESH_TTL}
-          FRONTEND_URL=${FRONTEND_URL}
-          CORS_ORIGINS=${CORS_ORIGINS}
+          JWT_ACCESS_SECRET=ci-access-secret-ci-access-secret-32
+          JWT_REFRESH_SECRET=ci-refresh-secret-ci-refresh-secret-32
+          JWT_ACCESS_TTL=15m
+          JWT_REFRESH_TTL=7d
+          FRONTEND_URL=http://localhost:3000
+          CORS_ORIGINS=http://localhost:3000
           CSRF_ENABLED=false
           SWAGGER_ENABLED=false
           NEW_RELIC_ENABLED=false
+          NEW_RELIC_APP_NAME=${NEW_RELIC_APP_NAME}
+          NEW_RELIC_LICENSE_KEY=${NEW_RELIC_LICENSE_KEY}
           LOG_LEVEL=info
+          MAIL_FROM=no-reply@example.com
+          SMTP_HOST=smtp.example.com
+          SMTP_PORT=587
+          SMTP_USER=ci-user
+          SMTP_PASSWORD=${SMTP_PASSWORD}
+          AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+          AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+          AWS_S3_BUCKET_NAME=mock-bucket
+          AWS_REGION=us-east-1
           EOF
 
           # Start the application service container in the background
