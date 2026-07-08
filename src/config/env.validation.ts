@@ -20,6 +20,11 @@ export const envSchema = z
       .default('false')
       .transform((v) => v === 'true'),
 
+    NEWRELIC_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
+
     CSRF_SECRET: z.string().min(16).optional(),
 
     GIT_COMMIT: z.string().default('unknown'),

@@ -127,6 +127,8 @@ jobs:
           CSRF_ENABLED=false
           SWAGGER_ENABLED=false
           NEW_RELIC_ENABLED=false
+          NEW_RELIC_APP_NAME=ci-smoke-test
+          NEW_RELIC_LICENSE_KEY=0000000000000000000000000000000000000000
           LOG_LEVEL=info
           MAIL_FROM=${MAIL_FROM}
           SMTP_HOST=${SMTP_HOST}
