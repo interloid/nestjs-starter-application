@@ -60,14 +60,17 @@ jobs:
       SWAGGER_ENABLED: 'false'
       NEW_RELIC_ENABLED: 'false'
       LOG_LEVEL: info
-      MAIL_FROM: no-reply@example.com
-      SMTP_HOST: localhost
-      SMTP_PORT: '587'
-      SMTP_USER: ci
-      SMTP_PASSWORD: ci
-      AWS_ACCESS_KEY_ID: 'mock-access-key'
-      AWS_SECRET_ACCESS_KEY: 'mock-secret-key'
-      AWS_S3_BUCKET_NAME: 'mock-bucket'
+      SMTP_HOST: ${{ vars.SMTP_HOST }}
+      SMTP_PORT: ${{ vars.SMTP_PORT }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      MAIL_FROM: ${{ vars.MAIL_FROM }}
+      NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+      NEW_RELIC_APP_NAME: ${{ vars.NEW_RELIC_APP_NAME }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_S3_BUCKET_NAME: ${{ vars.AWS_S3_BUCKET_NAME }}
 
     steps:
       - name: Checkout
@@ -110,6 +113,18 @@ jobs:
         run: docker compose build --no-cache
 
       - name: Execute Live Container Smoke Check
+        env:
+          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+          NEW_RELIC_APP_NAME: ${{ vars.NEW_RELIC_APP_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_S3_BUCKET_NAME: ${{ vars.AWS_S3_BUCKET_NAME }}
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_FROM: ${{ vars.MAIL_FROM }}
         run: |
           # Create .env from CI env vars so compose can load it
           cat > .env << EOF
@@ -127,17 +142,7 @@ jobs:
           CSRF_ENABLED=false
           SWAGGER_ENABLED=false
           NEW_RELIC_ENABLED=false
-          NEW_RELIC_APP_NAME=ci-smoke-test
-          NEW_RELIC_LICENSE_KEY=0000000000000000000000000000000000000000
           LOG_LEVEL=info
-          MAIL_FROM=${MAIL_FROM}
-          SMTP_HOST=${SMTP_HOST}
-          SMTP_PORT=${SMTP_PORT}
-          SMTP_USER=${SMTP_USER}
-          SMTP_PASSWORD=${SMTP_PASSWORD}
-          AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-          AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-          AWS_S3_BUCKET_NAME=${AWS_S3_BUCKET_NAME}
           EOF
 
           # Start the application service container in the background
