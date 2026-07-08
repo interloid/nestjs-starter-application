@@ -18,7 +18,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:local": "GIT_COMMIT=$(git rev-parse --short HEAD) BUILD_TIME=$(TZ='Asia/Kolkata' date +%Y-%m-%dT%H:%M:%S%:z) node dist/main",
+    "start:local": "GIT_COMMIT=$(git rev-parse --short HEAD) BUILD_TIME=$(TZ='Asia/Kolkata' date +%Y-%m-%dT%H:%M:%S%:z) node dist/src/main",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "node dist/prisma/seed.js",
     "start:prod": "npm run db:migrate && npm run db:seed && node -r dotenv/config -r newrelic dist/src/main",
