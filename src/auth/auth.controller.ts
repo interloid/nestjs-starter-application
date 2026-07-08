@@ -8,13 +8,15 @@ import {
   HttpStatus,
   Res,
   UnauthorizedException,
+  Patch,
+  Param,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { Throttle, seconds } from '@nestjs/throttler';
 import { User } from '@prisma/client';
-import { LoginDto, RefreshDto, RegisterDto, VerifyEmailDto } from './dto/auth.dto';
+import { AssignRoleDto, LoginDto, RefreshDto, RegisterDto, VerifyEmailDto } from './dto/auth.dto';
 import { Public } from '../common/decorators/public.decorator';
 import type { AuthenticatedUser } from './interfaces/authenticated-user.interface';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -24,6 +26,8 @@ import { ConfigService } from '@nestjs/config';
 import { Env } from '../config/env.validation';
 import { SkipCsrf } from '../common/decorators/skip-csrf.decorator';
 import { ApiBearerAuth } from '@nestjs/swagger';
+import { RequirePermission } from '../common/decorators/require-permission.decorator';
+import { TokenService } from './services/token.service';
 
 @Controller('auth')
 @SkipCsrf()
@@ -31,6 +35,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly config: ConfigService<Env, true>,
+    private readonly tokenService: TokenService,
   ) {}
 
   @Public()
@@ -60,14 +65,14 @@ export class AuthController {
         httpOnly: true,
         secure: this.config.get('NODE_ENV', { infer: true }) === 'production',
         sameSite: 'lax',
-        maxAge: 15 * 60 * 1000, // 15m
+        maxAge: this.tokenService.ttlToMs(this.config.get('JWT_ACCESS_TTL', { infer: true })),
       });
       res.cookie('refresh_token', result.refreshToken, {
         httpOnly: true,
         secure: this.config.get('NODE_ENV', { infer: true }) === 'production',
         sameSite: 'lax',
-        path: '/api/v1/auth/refresh', // only sent to the refresh endpoint
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7d
+        path: '/api/v1/auth/refresh',
+        maxAge: this.tokenService.ttlToMs(this.config.get('JWT_REFRESH_TTL', { infer: true })),
       });
       return { user: result.user };
     } else {
@@ -146,5 +151,11 @@ export class AuthController {
   @Post('logout-all')
   logoutAll(@CurrentUser() user: AuthenticatedUser) {
     return this.auth.logoutAll(user.id);
+  }
+
+  @RequirePermission('users:manage')
+  @Patch(':id/roles')
+  assignRole(@Param('id') id: string, @Body() dto: AssignRoleDto) {
+    return this.auth.assignRole(id, dto.role);
   }
 }

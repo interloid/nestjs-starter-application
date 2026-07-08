@@ -1,119 +1,124 @@
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { ConfigService } from '@nestjs/config';
+import { Test, TestingModule } from '@nestjs/testing';
 import { CsrfGuard } from './csrf.guard';
+import { Reflector } from '@nestjs/core';
+import { CsrfService } from './csrf.service';
+import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { SKIP_CSRF_KEY } from '../common/decorators/skip-csrf.decorator';
-import type { Env } from '../config/env.validation';
-
-const mockValidateRequest = jest.fn();
-jest.mock('csrf-csrf', () => ({
-  doubleCsrf: jest.fn(() => ({ validateRequest: mockValidateRequest })),
-}));
-
-type Flags = Partial<Record<'CSRF_ENABLED' | 'CSRF_SECRET' | 'NODE_ENV', string | boolean>>;
-
-function makeConfig(flags: Flags): ConfigService<Env, true> {
-  const values: Flags = {
-    CSRF_ENABLED: true,
-    CSRF_SECRET: 'test-secret',
-    NODE_ENV: 'test',
-    ...flags,
-  };
-  return {
-    get: jest.fn((key: keyof Flags) => values[key]),
-  } as unknown as ConfigService<Env, true>;
-}
-
-function makeReflector(skip = false): Reflector {
-  return {
-    getAllAndOverride: jest.fn(() => skip),
-  } as unknown as Reflector;
-}
-
-function mockContext(method = 'POST'): ExecutionContext {
-  const req = { method, headers: {}, ip: '127.0.0.1' };
-  const res = {};
-  return {
-    getHandler: jest.fn(() => 'handlerRef'),
-    getClass: jest.fn(() => 'classRef'),
-    switchToHttp: jest.fn(() => ({
-      getRequest: jest.fn(() => req),
-      getResponse: jest.fn(() => res),
-    })),
-  } as unknown as ExecutionContext;
-}
 
 describe('CsrfGuard', () => {
-  afterEach(() => jest.clearAllMocks());
+  let guard: CsrfGuard;
+  let reflector: jest.Mocked<Reflector>;
+  let csrfService: jest.Mocked<CsrfService>;
 
-  describe('when CSRF is disabled', () => {
-    it('allows all requests without validating', () => {
-      const guard = new CsrfGuard(makeReflector(), makeConfig({ CSRF_ENABLED: false }));
-      expect(guard.canActivate(mockContext('POST'))).toBe(true);
-      expect(mockValidateRequest).not.toHaveBeenCalled();
+  function createMockContext(method: string, handler = {}, controllerClass = {}): ExecutionContext {
+    return {
+      switchToHttp: jest.fn(function (this: void) {
+        return {
+          getRequest: jest.fn(function (this: void) {
+            return { method };
+          }),
+        };
+      }),
+      getHandler: jest.fn(function (this: void) {
+        return handler;
+      }),
+      getClass: jest.fn(function (this: void) {
+        return controllerClass;
+      }),
+    } as unknown as ExecutionContext;
+  }
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        CsrfGuard,
+        {
+          provide: Reflector,
+          useValue: {
+            getAllAndOverride: jest.fn(function (this: void) {
+              return false;
+            }),
+          },
+        },
+        {
+          provide: CsrfService,
+          useValue: {
+            enabled: true,
+            validateRequest: jest.fn(function (this: void) {
+              return true;
+            }),
+          },
+        },
+      ],
+    }).compile();
+
+    guard = module.get<CsrfGuard>(CsrfGuard);
+    reflector = module.get(Reflector);
+
+    csrfService = module.get(CsrfService);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should be successfully defined', () => {
+    expect(guard).toBeDefined();
+  });
+
+  it('should instantly allow activation if the global CSRF engine service is disabled', () => {
+    (csrfService as { enabled: boolean }).enabled = false;
+    const context = createMockContext('POST');
+
+    expect(guard.canActivate(context)).toBe(true);
+    expect(csrfService.validateRequest).not.toHaveBeenCalled();
+  });
+
+  type SafeMethod = 'GET' | 'HEAD' | 'OPTIONS';
+  const safeMethods: SafeMethod[] = ['GET', 'HEAD', 'OPTIONS'];
+  safeMethods.forEach((method) => {
+    it(`should completely bypass token checks for safe HTTP method: ${method}`, () => {
+      const context = createMockContext(method);
+      const infoSpy = jest.spyOn(reflector, 'getAllAndOverride');
+
+      expect(guard.canActivate(context)).toBe(true);
+      expect(infoSpy).not.toHaveBeenCalled();
+      expect(csrfService.validateRequest).not.toHaveBeenCalled();
     });
   });
 
-  describe('when enabled but secret is missing', () => {
-    it('throws at construction', () => {
-      expect(
-        () => new CsrfGuard(makeReflector(), makeConfig({ CSRF_ENABLED: true, CSRF_SECRET: '' })),
-      ).toThrow('CSRF_ENABLED is true but CSRF_SECRET is not set');
-    });
-  });
+  describe('When processing unsafe mutating HTTP request actions (e.g., POST, PUT, DELETE)', () => {
+    it('should allow access if the target route is decorated with the SkipCsrf metadata decorator key', () => {
+      const context = createMockContext('POST');
+      const infoSpy = jest.spyOn(reflector, 'getAllAndOverride');
 
-  describe('when CSRF is enabled', () => {
-    it('allows safe methods without validation (GET/HEAD/OPTIONS)', () => {
-      const guard = new CsrfGuard(makeReflector(), makeConfig({}));
-      for (const method of ['GET', 'HEAD', 'OPTIONS']) {
-        expect(guard.canActivate(mockContext(method))).toBe(true);
-      }
-      expect(mockValidateRequest).not.toHaveBeenCalled();
+      reflector.getAllAndOverride.mockReturnValueOnce(true);
+
+      expect(guard.canActivate(context)).toBe(true);
+      expect(infoSpy).toHaveBeenCalledWith(SKIP_CSRF_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+      expect(csrfService.validateRequest).not.toHaveBeenCalled();
     });
 
-    it('allows a route decorated with @SkipCsrf()', () => {
-      const guard = new CsrfGuard(makeReflector(true), makeConfig({})); // skip = true
-      expect(guard.canActivate(mockContext('POST'))).toBe(true);
-      expect(mockValidateRequest).not.toHaveBeenCalled();
+    it('should allow access if verification passes successfully against valid incoming request parameters', () => {
+      const context = createMockContext('POST');
+      reflector.getAllAndOverride.mockReturnValueOnce(false);
+      csrfService.validateRequest.mockReturnValueOnce(true);
+
+      expect(guard.canActivate(context)).toBe(true);
+      expect(csrfService.validateRequest).toHaveBeenCalledTimes(1);
     });
 
-    it('checks the reflector on handler and class for @SkipCsrf', () => {
-      const reflector = makeReflector(false);
-      const guard = new CsrfGuard(reflector, makeConfig({}));
-      const spy = jest.spyOn(reflector, 'getAllAndOverride');
+    it('should throw a ForbiddenException if validation fails against an invalid or missing token footprint', () => {
+      const context = createMockContext('POST');
+      reflector.getAllAndOverride.mockReturnValueOnce(false);
 
-      mockValidateRequest.mockReturnValueOnce(true);
+      csrfService.validateRequest.mockReturnValue(false);
 
-      guard.canActivate(mockContext('POST'));
-
-      expect(spy).toHaveBeenCalledWith(SKIP_CSRF_KEY, ['handlerRef', 'classRef']);
-    });
-
-    it('passes a state-changing request when the token is valid', () => {
-      const guard = new CsrfGuard(makeReflector(false), makeConfig({}));
-      mockValidateRequest.mockReturnValueOnce(true);
-
-      expect(guard.canActivate(mockContext('POST'))).toBe(true);
-      expect(mockValidateRequest).toHaveBeenCalledTimes(1);
-    });
-
-    it('throws ForbiddenException when the token is invalid', () => {
-      const guard = new CsrfGuard(makeReflector(false), makeConfig({}));
-      mockValidateRequest.mockReturnValueOnce(false);
-
-      expect(() => guard.canActivate(mockContext('POST'))).toThrow(ForbiddenException);
-      expect(() => {
-        mockValidateRequest.mockReturnValueOnce(false);
-        return new CsrfGuard(makeReflector(false), makeConfig({})).canActivate(mockContext('POST'));
-      }).toThrow('Invalid CSRF token');
-    });
-
-    it('validates for each state-changing method (POST/PUT/PATCH/DELETE)', () => {
-      const guard = new CsrfGuard(makeReflector(false), makeConfig({}));
-      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
-        mockValidateRequest.mockReturnValueOnce(true);
-        expect(guard.canActivate(mockContext(method))).toBe(true);
-      }
+      expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+      expect(() => guard.canActivate(context)).toThrow('Invalid CSRF token');
     });
   });
 });

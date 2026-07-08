@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   ci:
-    name: Lint, Type-check, Test, Build
+    name: Lint, Audit, Test, Build
     runs-on: ubuntu-latest
 
     # Service containers for tests that need a real DB / Redis.
@@ -77,7 +77,10 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm i
+        run: npm ci
+
+      - name: Security Audit
+        run: npm audit --audit-level=high
 
       - name: Generate Prisma client
         run: npx prisma generate
@@ -91,5 +94,34 @@ jobs:
       - name: Test (with coverage)
         run: npm test -- --coverage --ci
 
+      - name: Run E2E Testing Suite
+        run: npm run test:e2e
+
       - name: Build
         run: npm run build
+
+      - name: Build Local Production Docker Image
+        run: docker compose build --no-cache
+
+      - name: Execute Live Container Smoke Check
+        run: |
+          # Start the application service container in the background
+          docker compose up -d
+
+          echo "Awaiting system container initialization..."
+          sleep 5
+
+          # Query your real health endpoint path (matching the port mapped in your compose file)
+          echo "Querying internal application engine health parameters..."
+          RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/v1/health/ready || echo "000")
+
+          if [ "$RESPONSE_CODE" -eq 200 ]; then
+            echo "Success: Application successfully booted via Compose environment (HTTP 200)."
+            docker compose down
+          else
+            echo "Critical Error: Container failed initialization smoke check. Received HTTP Status: $RESPONSE_CODE"
+            echo "--- Container Operational Run Logs ---"
+            docker compose logs
+            docker compose down
+            exit 1
+          fi

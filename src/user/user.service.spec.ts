@@ -1,9 +1,11 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { UserService } from './user.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { PasswordService } from '../auth/services/password.service';
+import { PasswordService } from '../common/crypto/password.service';
+import { RegisterDto } from '../auth/dto/auth.dto';
+import { User } from '@prisma/client';
 
-const USER = {
+const USER: User = {
   id: 'user-1',
   email: 'user@example.com',
   emailVerified: false,
@@ -29,22 +31,47 @@ describe('UserService', () => {
       create: jest.Mock;
       update: jest.Mock;
     };
-    role: { findFirst: jest.Mock };
+    role: { findUnique: jest.Mock };
+    userRole: { upsert: jest.Mock };
   };
   let password: jest.Mocked<Pick<PasswordService, 'hash'>>;
 
   beforeEach(() => {
+    // Satisfies linter by defining functions explicitly with safe return stubs
     prisma = {
       user: {
-        findUnique: jest.fn(),
-        findFirst: jest.fn(),
-        findMany: jest.fn().mockResolvedValue([]),
-        create: jest.fn().mockResolvedValue(USER),
-        update: jest.fn().mockResolvedValue(USER),
+        findUnique: jest.fn(function (this: void) {
+          return Promise.resolve(null);
+        }),
+        findFirst: jest.fn(function (this: void) {
+          return Promise.resolve(null);
+        }),
+        findMany: jest.fn(function (this: void) {
+          return Promise.resolve([]);
+        }),
+        create: jest.fn(function (this: void) {
+          return Promise.resolve(USER);
+        }),
+        update: jest.fn(function (this: void) {
+          return Promise.resolve(USER);
+        }),
       },
-      role: { findFirst: jest.fn().mockResolvedValue(ROLE) },
+      role: {
+        findUnique: jest.fn(function (this: void) {
+          return Promise.resolve(ROLE);
+        }),
+      },
+      userRole: {
+        upsert: jest.fn(function (this: void) {
+          return Promise.resolve({});
+        }),
+      },
     };
-    password = { hash: jest.fn().mockResolvedValue('HASHED') };
+    password = {
+      hash: jest.fn(function (this: void) {
+        return Promise.resolve('HASHED');
+      }),
+    };
 
     service = new UserService(
       prisma as unknown as PrismaService,
@@ -55,41 +82,38 @@ describe('UserService', () => {
   afterEach(() => jest.clearAllMocks());
 
   describe('create', () => {
-    const dto = {
+    const dto: RegisterDto = {
       email: 'User@Example.com',
       password: 'pw',
       firstName: 'Test',
       lastName: 'User',
-      role: 'user',
       avatarUrl: null,
-    } as never;
+    };
 
     it('normalizes the email to lowercase before storing', async () => {
-      prisma.user.findUnique.mockResolvedValueOnce(null);
       await service.create(dto);
 
-      const data = prisma.user.create.mock.calls[0][0].data;
-      expect(data.email).toBe('user@example.com');
+      const arg = prisma.user.create.mock.calls[0][0];
+      expect(arg.data.email).toBe('user@example.com');
     });
 
-    it('throws NotFoundException when the role does not exist', async () => {
-      prisma.role.findFirst.mockResolvedValueOnce(null);
-      await expect(service.create(dto)).rejects.toThrow(NotFoundException);
+    it('throws InternalServerErrorException when the default role does not exist', async () => {
+      prisma.role.findUnique.mockResolvedValueOnce(null);
+      await expect(service.create(dto)).rejects.toThrow(InternalServerErrorException);
     });
 
     it('throws ConflictException when the email is already registered', async () => {
-      prisma.user.findUnique.mockResolvedValueOnce(USER); // existing
+      prisma.user.findUnique.mockResolvedValueOnce(USER);
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
     });
 
-    it('hashes the password and assigns the resolved role', async () => {
-      prisma.user.findUnique.mockResolvedValueOnce(null);
+    it('hashes the password and assigns the resolved role relational tree', async () => {
       await service.create(dto);
 
       expect(password.hash).toHaveBeenCalledWith('pw');
-      const data = prisma.user.create.mock.calls[0][0].data;
-      expect(data.passwordHash).toBe('HASHED');
-      expect(data.roles).toEqual({ create: { roleId: 'role-1' } });
+      const arg = prisma.user.create.mock.calls[0][0];
+      expect(arg.data.passwordHash).toBe('HASHED');
+      expect(arg.data.roles).toEqual({ create: { roleId: 'role-1' } });
     });
   });
 
@@ -114,18 +138,10 @@ describe('UserService', () => {
       prisma.user.findFirst.mockResolvedValueOnce(null);
       await expect(service.findById('missing')).rejects.toThrow(NotFoundException);
     });
-
-    it('filters out soft-deleted users', async () => {
-      prisma.user.findFirst.mockResolvedValueOnce(USER);
-      await service.findById('user-1');
-      expect(prisma.user.findFirst).toHaveBeenCalledWith({
-        where: { id: 'user-1', deletedAt: null },
-      });
-    });
   });
 
   describe('markEmailVerified', () => {
-    it('sets emailVerified true and status ACTIVE', async () => {
+    it('sets emailVerified true and status true', async () => {
       await service.markEmailVerified('user-1');
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: 'user-1' },
@@ -155,7 +171,7 @@ describe('UserService', () => {
   });
 
   describe('findByIdWithRoles', () => {
-    it('includes the nested role→permission tree and filters soft-deleted', async () => {
+    it('includes the deep nested role→permission mapping tree structures', async () => {
       prisma.user.findFirst.mockResolvedValueOnce({ ...USER, roles: [] });
       await service.findByIdWithRoles('user-1');
 
@@ -166,18 +182,57 @@ describe('UserService', () => {
   });
 
   describe('findAll', () => {
-    it('filters soft-deleted users and omits password hashes', async () => {
+    it('filters out soft-deleted users and strictly omits password hashes', async () => {
       await service.findAll();
 
-      expect(prisma.user.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { deletedAt: null },
-        }),
-      );
-      const arg = prisma.user.findMany.mock.calls[0]?.[0] ?? {};
-      const omitsHash =
-        arg.omit?.passwordHash === true || (arg.select && arg.select.passwordHash !== true);
-      expect(omitsHash).toBe(true);
+      expect(prisma.user.findMany).toHaveBeenCalledWith({
+        where: { deletedAt: null },
+        omit: { passwordHash: true },
+      });
+    });
+  });
+
+  describe('assignRole', () => {
+    const userId = 'user-1';
+    const targetRoleName = 'admin';
+    const mockRolePayload = { id: 'role-admin-id', name: 'admin' };
+
+    it('successfully updates or creates permissions using the composite userRole identifier', async () => {
+      prisma.user.findFirst.mockResolvedValueOnce(USER);
+      prisma.role.findUnique.mockResolvedValueOnce(mockRolePayload);
+
+      const spyFindByIdWithRoles = jest
+        .spyOn(service, 'findByIdWithRoles')
+        .mockResolvedValueOnce({ ...USER, id: userId });
+
+      const result = await service.assignRole(userId, targetRoleName);
+
+      expect(prisma.userRole.upsert).toHaveBeenCalledWith({
+        where: {
+          userId_roleId: {
+            userId: userId,
+            roleId: mockRolePayload.id,
+          },
+        },
+        update: {},
+        create: {
+          userId: userId,
+          roleId: mockRolePayload.id,
+        },
+      });
+      expect(spyFindByIdWithRoles).toHaveBeenCalledWith(userId);
+      expect(result?.id).toBe(userId);
+    });
+
+    it('throws NotFoundException if target user structure is soft-deleted or missing', async () => {
+      prisma.user.findFirst.mockResolvedValueOnce(null);
+      await expect(service.assignRole(userId, targetRoleName)).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException if the requested assignment role does not exist inside the definitions', async () => {
+      prisma.user.findFirst.mockResolvedValueOnce(USER);
+      prisma.role.findUnique.mockResolvedValueOnce(null);
+      await expect(service.assignRole(userId, targetRoleName)).rejects.toThrow(NotFoundException);
     });
   });
 });

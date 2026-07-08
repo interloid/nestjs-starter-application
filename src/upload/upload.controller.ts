@@ -1,14 +1,8 @@
-import {
-  Controller,
-  Post,
-  UploadedFile,
-  UseInterceptors,
-  BadRequestException,
-} from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Controller, BadRequestException, Get, Query } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
 import { UploadService } from './upload.service';
+import { seconds, Throttle } from '@nestjs/throttler';
 
 @ApiTags('Upload')
 @Public()
@@ -16,45 +10,20 @@ import { UploadService } from './upload.service';
 export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
 
-  @Post('profile-image')
-  @ApiOperation({ summary: 'Upload a profile image to S3 before registration' })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    description: 'The binary image file to upload',
-    schema: {
-      type: 'object',
-      properties: {
-        file: {
-          type: 'string',
-          format: 'binary',
-        },
-      },
-      required: ['file'],
-    },
-  })
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: { fileSize: 2 * 1024 * 1024 },
-      fileFilter: (req, file, callback) => {
-        if (!file.mimetype.match(/\/(jpg|jpeg|png|webp)$/)) {
-          return callback(
-            new BadRequestException('Only JPG, JPEG, PNG, or WEBP images are allowed!'),
-            false,
-          );
-        }
-        callback(null, true);
-      },
-    }),
-  )
-  async uploadFile(@UploadedFile() file: Express.Multer.File) {
-    if (!file || !file.buffer) {
-      throw new BadRequestException('No file provided');
+  @Public()
+  @Throttle({ default: { limit: 3, ttl: seconds(60) } }) // 3 uploads per minute max for anonymous users
+  @Get('presigned-url')
+  @ApiOperation({ summary: 'Get a temporary secure S3 URL for direct file upload' })
+  getPresignedUrl(@Query('fileName') fileName: string, @Query('fileType') fileType: string) {
+    if (!fileName || !fileType) {
+      throw new BadRequestException('fileName and fileType are required');
     }
 
-    const url = await this.uploadService.uploadFile(file);
+    const allowedTypes = ['image/jpeg', 'image/png'];
+    if (!allowedTypes.includes(fileType)) {
+      throw new BadRequestException('Invalid file type');
+    }
 
-    return {
-      profileImageUrl: url,
-    };
+    return this.uploadService.createPresignedUrl(fileName, fileType);
   }
 }

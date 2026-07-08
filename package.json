@@ -19,7 +19,7 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:local": "GIT_COMMIT=$(git rev-parse --short HEAD) BUILD_TIME=$(TZ='Asia/Kolkata' date +%Y-%m-%dT%H:%M:%S%:z) node dist/main",
-    "start:prod": "node -r dotenv/config -r newrelic dist/main",
+    "start:prod": "npx prisma migrate deploy && npx prisma db seed && node -r dotenv/config -r newrelic dist/src/main",
     "docker:build": "GIT_COMMIT=$(git rev-parse --short HEAD) BUILD_TIME=$(TZ='Asia/Kolkata' date +%Y-%m-%dT%H:%M:%S%:z) docker compose build",
     "docker:up": "GIT_COMMIT=$(git rev-parse --short HEAD) BUILD_TIME=$(TZ='Asia/Kolkata' date +%Y-%m-%dT%H:%M:%S%:z) docker compose up -d --build",
     "docker:down": "docker compose down",
@@ -35,11 +35,13 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e": "jest --config ./test/jest-e2e.json --detectOpenHandles --forceExit",
     "prepare": "husky"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1079.0",
+    "@aws-sdk/client-s3": "^3.1080.0",
+    "@aws-sdk/s3-request-presigner": "^3.1080.0",
+    "@nest-lab/throttler-storage-redis": "^1.2.0",
     "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
@@ -72,7 +74,8 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "swagger-ui-express": "^5.0.1",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -91,6 +94,7 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/passport-local": "^1.0.38",
     "@types/supertest": "^7.0.0",
+    "@types/zxcvbn": "^4.4.5",
     "aws-sdk-client-mock": "^4.1.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
@@ -124,7 +128,7 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
-      "**/*.{service,guard,strategy}.ts"
+      "**/*.{service,guard,strategy,filter,interceptor}.ts"
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",

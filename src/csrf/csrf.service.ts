@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { doubleCsrf } from 'csrf-csrf';
@@ -12,8 +12,16 @@ export class CsrfService {
 
   constructor(private readonly config: ConfigService<Env, true>) {
     this.enabled = this.config.get('CSRF_ENABLED', { infer: true });
+    if (!this.enabled) {
+      this.generateToken = () => '';
+      this.validateRequest = () => true;
+      return;
+    }
 
-    const secret = this.config.get('CSRF_SECRET', { infer: true }) ?? 'dev-only';
+    const secret = this.config.get('CSRF_SECRET', { infer: true });
+    if (!secret) {
+      throw new InternalServerErrorException('CSRF_ENABLED is true but CSRF_SECRET is not set');
+    }
 
     const { generateCsrfToken, validateRequest } = doubleCsrf({
       getSecret: () => secret,

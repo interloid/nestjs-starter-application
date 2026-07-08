@@ -4,7 +4,7 @@ import type { Queue } from 'bullmq';
 import { AuthService } from './auth.service';
 import { TokenService } from './services/token.service';
 import { VerificationTokenService } from './services/verification-token.service';
-import { PasswordService } from './services/password.service';
+import { PasswordService } from '../common/crypto/password.service';
 import { UserService } from '../user/user.service';
 import type { Env } from '../config/env.validation';
 import { RegisterDto } from './dto/auth.dto';

@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { User } from '@prisma/client';
 import { LocalStrategy } from './local.strategy';
 import { UserService } from '../../user/user.service';
-import { PasswordService } from '../services/password.service';
+import { PasswordService } from '../../common/crypto/password.service';
 
 const VALID_USER = {
   id: 'user-1',
