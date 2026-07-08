@@ -9,7 +9,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { MAIL_QUEUE } from '../mail/mail.constants';
 import { ConfigService } from '@nestjs/config';
-import { PasswordService } from './services/password.service';
+import { PasswordService } from '../common/crypto/password.service';
 import { Env } from '../config/env.validation';
 
 @Injectable()
@@ -95,5 +95,9 @@ export class AuthService {
   async logoutAll(userId: string) {
     await this.tokens.revokeAllForUser(userId);
     return { success: true };
+  }
+
+  async assignRole(id: string, role: string) {
+    await this.users.assignRole(id, role);
   }
 }

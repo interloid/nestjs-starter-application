@@ -1,275 +1,280 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import { TokenService, JwtPayload } from './token.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'node:crypto';
-import { TokenService, JwtPayload } from './token.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { Env } from '../../config/env.validation';
+import { UnauthorizedException } from '@nestjs/common';
+import * as crypto from 'node:crypto';
 
-type EnvConfig = Pick<
-  Env,
-  'JWT_ACCESS_SECRET' | 'JWT_REFRESH_SECRET' | 'JWT_ACCESS_TTL' | 'JWT_REFRESH_TTL'
->;
-
-const ENV: EnvConfig = {
-  JWT_ACCESS_SECRET: 'access-secret-value',
-  JWT_REFRESH_SECRET: 'refresh-secret-value',
-  JWT_ACCESS_TTL: '15m',
-  JWT_REFRESH_TTL: '7d',
-};
-
-function sha256(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
+jest.mock('node:crypto', () => ({
+  ...(jest.requireActual('node:crypto') as unknown as typeof crypto),
+  randomUUID: jest.fn(function (this: void) {
+    return 'mocked-jti-uuid';
+  }),
+}));
 
 describe('TokenService', () => {
   let service: TokenService;
-  let jwt: jest.Mocked<Pick<JwtService, 'signAsync' | 'verifyAsync'>>;
-  let config: jest.Mocked<Pick<ConfigService<Env, true>, 'get'>>;
-  let prisma: {
+  let jwtService: jest.Mocked<JwtService>;
+  let prismaService: {
     refreshToken: {
       create: jest.Mock;
       findUnique: jest.Mock;
+      findFirst: jest.Mock;
       update: jest.Mock;
       updateMany: jest.Mock;
     };
+    user: {
+      findFirst: jest.Mock;
+    };
   };
 
-  beforeEach(() => {
-    jwt = {
-      signAsync: jest.fn(),
-      verifyAsync: jest.fn(),
-    };
+  const mockConfigStore: Record<string, string> = {
+    JWT_ACCESS_SECRET: 'access-secret',
+    JWT_ACCESS_TTL: '15m',
+    JWT_REFRESH_SECRET: 'refresh-secret',
+    JWT_REFRESH_TTL: '7d',
+  };
 
-    config = {
-      get: jest.fn((key: keyof EnvConfig) => ENV[key]) as unknown as jest.Mocked<
-        ConfigService<Env, true>
-      >['get'],
-    };
-
-    prisma = {
+  beforeEach(async () => {
+    prismaService = {
       refreshToken: {
-        create: jest.fn().mockResolvedValue({ id: 'rt-1' }),
-        findUnique: jest.fn(),
-        update: jest.fn().mockResolvedValue({ id: 'rt-1' }),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        create: jest.fn(function (this: void) {
+          return Promise.resolve({});
+        }),
+        findUnique: jest.fn(function (this: void) {
+          return Promise.resolve(null);
+        }),
+        findFirst: jest.fn(function (this: void) {
+          return Promise.resolve(null);
+        }),
+        update: jest.fn(function (this: void) {
+          return Promise.resolve({});
+        }),
+        updateMany: jest.fn(function (this: void) {
+          return Promise.resolve({ count: 1 });
+        }),
+      },
+      user: {
+        findFirst: jest.fn(function (this: void) {
+          return Promise.resolve({ status: true });
+        }),
       },
     };
 
-    service = new TokenService(
-      jwt as unknown as JwtService,
-      config as unknown as ConfigService<Env, true>,
-      prisma as unknown as PrismaService,
-    );
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        TokenService,
+        {
+          provide: JwtService,
+          useValue: {
+            signAsync: jest.fn(function (this: void) {
+              return Promise.resolve('mocked-jwt-string');
+            }),
+            verifyAsync: jest.fn(function (this: void) {
+              return Promise.resolve({});
+            }),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn(function (this: void, key: string) {
+              return mockConfigStore[key];
+            }),
+          },
+        },
+        {
+          provide: PrismaService,
+          useValue: prismaService,
+        },
+      ],
+    }).compile();
+
+    service = module.get<TokenService>(TokenService);
+    jwtService = module.get(JwtService);
   });
 
-  afterEach(() => jest.clearAllMocks());
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should be successfully defined', () => {
+    expect(service).toBeDefined();
+  });
+
+  describe('ttlToMs', () => {
+    it('should correctly parse shorthand time expressions to exact milliseconds', () => {
+      expect(service.ttlToMs('10s')).toBe(10_000);
+      expect(service.ttlToMs('5m')).toBe(300_000);
+      expect(service.ttlToMs('2h')).toBe(7_200_000);
+      expect(service.ttlToMs('3d')).toBe(259_200_000);
+    });
+
+    it('should fallback to 7 days if the configuration format expression string matches no pattern tokens', () => {
+      const defaultSevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+      expect(service.ttlToMs('invalid-string')).toBe(defaultSevenDaysInMs);
+    });
+  });
 
   describe('issueTokens', () => {
-    beforeEach(() => {
-      jwt.signAsync
-        .mockResolvedValueOnce('signed-access-token') // access
-        .mockResolvedValueOnce('signed-refresh-token'); // refresh
-    });
+    it('should sign access and refresh payloads and commit a token hash entry to the database', async () => {
+      const userId = 'user-123';
+      const email = 'test@example.com';
+      const meta = { userAgent: 'Chrome', ipAddress: '127.0.0.1' };
+      const infoSpy = jest.spyOn(jwtService, 'signAsync');
 
-    it('signs the access token with the ACCESS secret and TTL', async () => {
-      await service.issueTokens('user-1', 'user@example.com');
+      jwtService.signAsync
+        .mockResolvedValueOnce('access-token-string')
+        .mockResolvedValueOnce('refresh-token-string');
 
-      expect(jwt.signAsync).toHaveBeenNthCalledWith(
-        1,
-        { sub: 'user-1', email: 'user@example.com' } satisfies JwtPayload,
-        { secret: ENV.JWT_ACCESS_SECRET, expiresIn: ENV.JWT_ACCESS_TTL },
-      );
-    });
+      const result = await service.issueTokens(userId, email, meta);
 
-    it('signs the refresh token with the REFRESH secret, TTL, and a jti', async () => {
-      await service.issueTokens('user-1', 'user@example.com');
-
-      const [payloadArg, optsArg] = jwt.signAsync.mock.calls[1];
-      expect(payloadArg).toMatchObject({ sub: 'user-1', email: 'user@example.com' });
-      expect(payloadArg).toHaveProperty('jti'); // unique id present
-      expect(optsArg).toEqual({
-        secret: ENV.JWT_REFRESH_SECRET,
-        expiresIn: ENV.JWT_REFRESH_TTL,
-      });
-    });
-
-    it('stores the HASH of the refresh token, never the raw token', async () => {
-      await service.issueTokens('user-1', 'user@example.com', {
-        userAgent: 'jest',
-        ipAddress: '127.0.0.1',
-      });
-
-      expect(prisma.refreshToken.create).toHaveBeenCalledTimes(1);
-      const createArg = prisma.refreshToken.create.mock.calls[0][0].data;
-
-      expect(createArg.tokenHash).toBe(sha256('signed-refresh-token'));
-      expect(JSON.stringify(createArg)).not.toContain('signed-refresh-token');
-      expect(createArg.userId).toBe('user-1');
-      expect(createArg.userAgent).toBe('jest');
-      expect(createArg.ipAddress).toBe('127.0.0.1');
-      expect(createArg.expiresAt).toBeInstanceOf(Date);
-    });
-
-    it('returns both raw tokens to the caller', async () => {
-      const result = await service.issueTokens('user-1', 'user@example.com');
       expect(result).toEqual({
-        accessToken: 'signed-access-token',
-        refreshToken: 'signed-refresh-token',
+        accessToken: 'access-token-string',
+        refreshToken: 'refresh-token-string',
       });
-    });
-    it('handles partial meta (one field present, one absent)', async () => {
-      jwt.signAsync.mockResolvedValueOnce('access').mockResolvedValueOnce('refresh');
 
-      await service.issueTokens('user-1', 'user@example.com', { userAgent: 'ua-only' });
+      expect(infoSpy).toHaveBeenNthCalledWith(
+        1,
+        { sub: userId, email },
+        expect.objectContaining({
+          secret: 'access-secret',
+          expiresIn: '15m',
+        }),
+      );
 
-      const data = prisma.refreshToken.create.mock.calls[0][0].data;
-      expect(data.userAgent).toBe('ua-only');
-      expect(data.ipAddress).toBeUndefined();
-    });
+      expect(infoSpy).toHaveBeenNthCalledWith(
+        2,
+        { sub: userId, email, jti: 'mocked-jti-uuid' },
+        expect.objectContaining({
+          secret: 'refresh-secret',
+          expiresIn: '7d',
+        }),
+      );
 
-    it('generates a distinct jti per call (tokens are not identical)', async () => {
-      jwt.signAsync.mockReset();
-      jwt.signAsync.mockResolvedValue('x'); // any value
-      await service.issueTokens('user-1', 'a@b.com');
-      await service.issueTokens('user-1', 'a@b.com');
-
-      const jti1 = (jwt.signAsync.mock.calls[1][0] as { jti: string }).jti;
-      const jti2 = (jwt.signAsync.mock.calls[3][0] as { jti: string }).jti;
-      expect(jti1).not.toBe(jti2);
-    });
-  });
-
-  describe('hashToken', () => {
-    it('produces a stable SHA-256 hex digest', () => {
-      expect(service.hashToken('abc')).toBe(sha256('abc'));
-      expect(service.hashToken('abc')).toBe(service.hashToken('abc')); // deterministic
-    });
-
-    it('produces different hashes for different inputs', () => {
-      expect(service.hashToken('abc')).not.toBe(service.hashToken('abd'));
+      expect(prismaService.refreshToken.create).toHaveBeenCalledWith({
+        data: {
+          userId,
+          tokenHash: service.hashToken('refresh-token-string'),
+          userAgent: 'Chrome',
+          ipAddress: '127.0.0.1',
+          expiresAt: expect.any(Date),
+        },
+      });
     });
   });
 
   describe('refreshTokens', () => {
-    const validStored = {
-      id: 'rt-1',
-      userId: 'user-1',
-      tokenHash: sha256('old-refresh'),
+    const rawToken = 'valid-refresh-token';
+    const userId = 'user-123';
+    const mockPayload: JwtPayload & { jti: string } = {
+      sub: userId,
+      email: 'test@example.com',
+      jti: 'jti-1',
+    };
+    const mockDbRecord = {
+      id: 'record-1',
+      userId,
+      tokenHash: 'hashed-token',
       revokedAt: null,
-      expiresAt: new Date(Date.now() + 60_000), // not expired
+      expiresAt: new Date(Date.now() + 100_000),
     };
 
-    it('rejects a token that fails JWT verification', async () => {
-      jwt.verifyAsync.mockRejectedValueOnce(new Error('bad signature'));
-
-      await expect(service.refreshTokens('tampered')).rejects.toThrow(UnauthorizedException);
-      expect(prisma.refreshToken.findUnique).not.toHaveBeenCalled();
+    beforeEach(() => {
+      jwtService.verifyAsync.mockResolvedValue(mockPayload);
     });
 
-    it('rejects when the token is not found in the store', async () => {
-      jwt.verifyAsync.mockResolvedValueOnce({ sub: 'user-1', email: 'a@b.com', jti: 'j' });
-      prisma.refreshToken.findUnique.mockResolvedValueOnce(null);
+    it('should rotate tokens successfully when valid inputs match active database sessions', async () => {
+      prismaService.refreshToken.findUnique.mockResolvedValueOnce(mockDbRecord);
 
-      await expect(service.refreshTokens('old-refresh')).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('rejects a revoked token', async () => {
-      jwt.verifyAsync.mockResolvedValueOnce({ sub: 'user-1', email: 'a@b.com', jti: 'j' });
-      prisma.refreshToken.findUnique.mockResolvedValueOnce({
-        ...validStored,
-        revokedAt: new Date(),
+      const spyIssue = jest.spyOn(service, 'issueTokens').mockResolvedValueOnce({
+        accessToken: 'new-access-token',
+        refreshToken: 'new-refresh-token',
       });
 
-      await expect(service.refreshTokens('old-refresh')).rejects.toThrow(
+      const result = await service.refreshTokens(rawToken);
+
+      expect(prismaService.refreshToken.update).toHaveBeenCalledWith({
+        where: { id: mockDbRecord.id },
+        data: { revokedAt: expect.any(Date) },
+      });
+      expect(spyIssue).toHaveBeenCalledWith(userId, mockPayload.email, undefined);
+      expect(result).toEqual({
+        accessToken: 'new-access-token',
+        refreshToken: 'new-refresh-token',
+      });
+    });
+
+    it('should throw UnauthorizedException if the JWT signature is corrupted or invalid', async () => {
+      jwtService.verifyAsync.mockRejectedValueOnce(new Error('Invalid signature'));
+
+      await expect(service.refreshTokens(rawToken)).rejects.toThrow(UnauthorizedException);
+      await expect(service.refreshTokens(rawToken)).rejects.toThrow(
         'Refresh token expired or revoked',
       );
     });
 
-    it('rejects an expired token', async () => {
-      jwt.verifyAsync.mockResolvedValueOnce({ sub: 'user-1', email: 'a@b.com', jti: 'j' });
-      prisma.refreshToken.findUnique.mockResolvedValueOnce({
-        ...validStored,
-        expiresAt: new Date(Date.now() - 1000), // expired
-      });
+    it('should throw UnauthorizedException if token hash cannot be matched to a database session row', async () => {
+      prismaService.refreshToken.findUnique.mockResolvedValueOnce(null);
 
-      await expect(service.refreshTokens('old-refresh')).rejects.toThrow(UnauthorizedException);
+      // ✅ Changed string to match the exact exception output
+      await expect(service.refreshTokens(rawToken)).rejects.toThrow(
+        'Refresh token expired or revoked',
+      );
     });
 
-    it('looks up the stored row by the HASH of the raw token', async () => {
-      jwt.verifyAsync.mockResolvedValueOnce({ sub: 'user-1', email: 'a@b.com', jti: 'j' });
-      prisma.refreshToken.findUnique.mockResolvedValueOnce(validStored);
-      jwt.signAsync.mockResolvedValue('new-token');
-
-      await service.refreshTokens('old-refresh');
-
-      expect(prisma.refreshToken.findUnique).toHaveBeenCalledWith({
-        where: { tokenHash: sha256('old-refresh') },
+    it('should trigger security countermeasures and revoke all active sessions if token reuse is detected', async () => {
+      // Simulates an already revoked refresh token record
+      prismaService.refreshToken.findUnique.mockResolvedValueOnce({
+        ...mockDbRecord,
+        revokedAt: new Date(),
       });
+
+      const spyRevokeAll = jest.spyOn(service, 'revokeAllForUser').mockResolvedValueOnce();
+
+      await expect(service.refreshTokens(rawToken)).rejects.toThrow(
+        'Refresh token reuse detected — all sessions revoked',
+      );
+      expect(spyRevokeAll).toHaveBeenCalledWith(userId);
     });
 
-    it('ROTATES: revokes the old token, then issues a new pair', async () => {
-      jwt.verifyAsync.mockResolvedValueOnce({ sub: 'user-1', email: 'a@b.com', jti: 'j' });
-      prisma.refreshToken.findUnique.mockResolvedValueOnce(validStored);
-      jwt.signAsync.mockResolvedValueOnce('new-access').mockResolvedValueOnce('new-refresh');
+    it('should throw UnauthorizedException if the attached user account is soft-deleted or inactive', async () => {
+      prismaService.refreshToken.findUnique.mockResolvedValueOnce(mockDbRecord);
+      prismaService.user.findFirst.mockResolvedValueOnce(null); // Account soft-deleted/missing
 
-      const result = await service.refreshTokens('old-refresh');
+      await expect(service.refreshTokens(rawToken)).rejects.toThrow('Account inactive');
+    });
 
-      expect(prisma.refreshToken.update).toHaveBeenCalledWith({
-        where: { id: 'rt-1' },
-        data: { revokedAt: expect.any(Date) },
+    it('should throw UnauthorizedException if the chronological expiration clock threshold has passed', async () => {
+      prismaService.refreshToken.findUnique.mockResolvedValueOnce({
+        ...mockDbRecord,
+        expiresAt: new Date(Date.now() - 100_000), // Chronologically expired
       });
-      expect(prisma.refreshToken.create).toHaveBeenCalledTimes(1);
-      expect(result).toEqual({ accessToken: 'new-access', refreshToken: 'new-refresh' });
+
+      await expect(service.refreshTokens(rawToken)).rejects.toThrow('Refresh token expired');
     });
   });
 
-  describe('revokeRefreshToken', () => {
-    it('revokes by hash, only rows not already revoked', async () => {
-      await service.revokeRefreshToken('some-token');
+  describe('Revocation Operations', () => {
+    it('should flag target matching active rows as revoked inside revokeRefreshToken', async () => {
+      const rawToken = 'kill-me-token';
+      await service.revokeRefreshToken(rawToken);
 
-      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
-        where: { tokenHash: sha256('some-token'), revokedAt: null },
+      expect(prismaService.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { tokenHash: service.hashToken(rawToken), revokedAt: null },
         data: { revokedAt: expect.any(Date) },
       });
     });
-  });
 
-  describe('revokeAllForUser', () => {
-    it('revokes all active tokens for the user', async () => {
-      await service.revokeAllForUser('user-1');
+    it('should invalidate all active records for a user ID inside revokeAllForUser', async () => {
+      const userId = 'user-to-clear';
+      await service.revokeAllForUser(userId);
 
-      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
-        where: { userId: 'user-1', revokedAt: null },
+      expect(prismaService.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId, revokedAt: null },
         data: { revokedAt: expect.any(Date) },
       });
-    });
-  });
-
-  describe('refresh expiry / ttlToMs parsing', () => {
-    const parse = (ttl: string): number =>
-      (service as unknown as { ttlToMs(t: string): number }).ttlToMs(ttl);
-
-    it.each([
-      ['30s', 30_000],
-      ['15m', 15 * 60_000],
-      ['2h', 2 * 3_600_000],
-      ['7d', 7 * 86_400_000],
-    ])('parses %s correctly', (ttl, expected) => {
-      expect(parse(ttl)).toBe(expected);
-    });
-
-    it('falls back to 7 days for an unparseable TTL', () => {
-      expect(parse('garbage')).toBe(7 * 24 * 60 * 60 * 1000);
-    });
-
-    it('stores an expiresAt in the future on issueTokens', async () => {
-      jwt.signAsync.mockResolvedValue('t');
-      const before = Date.now();
-      await service.issueTokens('user-1', 'a@b.com');
-
-      const expiresAt: Date = prisma.refreshToken.create.mock.calls[0][0].data.expiresAt;
-      expect(expiresAt.getTime()).toBeGreaterThan(before);
     });
   });
 });

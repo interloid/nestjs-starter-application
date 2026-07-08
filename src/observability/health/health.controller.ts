@@ -4,6 +4,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { SkipCsrf } from '../../common/decorators/skip-csrf.decorator';
 import { VersionService } from './version.service';
 import { Public } from '../../common/decorators/public.decorator';
+import { PrismaHealthIndicator } from './prisma.health';
 
 @SkipThrottle()
 @Public()
@@ -14,6 +15,7 @@ export class HealthController {
     private readonly health: HealthCheckService,
     private readonly memory: MemoryHealthIndicator,
     private readonly version: VersionService,
+    private readonly prismaHealth: PrismaHealthIndicator,
   ) {}
 
   @Get('live')
@@ -26,6 +28,7 @@ export class HealthController {
   @HealthCheck()
   async eadiness() {
     const result = await this.health.check([
+      () => this.prismaHealth.isHealthy('database'),
       () => this.memory.checkHeap('memory_heap', 300 * 1024 * 1024),
       () => this.memory.checkRSS('memory_rss', 400 * 1024 * 1024),
     ]);

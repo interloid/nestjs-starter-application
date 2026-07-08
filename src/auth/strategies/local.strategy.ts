@@ -3,7 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Strategy } from 'passport-local';
 import { User } from '@prisma/client';
 import { UserService } from '../../user/user.service';
-import { PasswordService } from '../services/password.service';
+import { PasswordService } from '../../common/crypto/password.service';
 
 @Injectable()
 export class LocalStrategy extends PassportStrategy(Strategy) {

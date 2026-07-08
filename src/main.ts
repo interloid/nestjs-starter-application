@@ -8,19 +8,24 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { VersioningType } from '@nestjs/common';
 import { setupSwagger } from './common/swagger/swagger.setup';
-import { Server } from 'http';
+import { NestExpressApplication } from '@nestjs/platform-express';
 
 const logger = new NestLogger();
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
+  const config = app.get(ConfigService<Env, true>);
+
+  if (config.get('APP_ENV', { infer: true }) !== 'local') {
+    app.set('trust proxy', 1);
+  }
+  app.set('trust proxy', 1);
+
   app.use(cookieParser());
 
   app.useLogger(app.get(LoggerService));
-  const config = app.get(ConfigService<Env, true>);
 
   app.use(helmet());
-
   const origins = config
     .get('CORS_ORIGINS', { infer: true })
     .split(',')
@@ -47,7 +52,7 @@ async function bootstrap() {
 
   const port = config.get('PORT', { infer: true });
 
-  const server = (await app.listen(port)) as Server;
+  const server = await app.listen(port);
 
   logger.log(`Application successfully listening on port: ${port}`);
   const handleShutdown = (signal: string) => {

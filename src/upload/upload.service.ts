@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Env } from '../config/env.validation';
 import * as crypto from 'crypto';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 @Injectable()
 export class UploadService {
@@ -23,27 +24,31 @@ export class UploadService {
     });
   }
 
-  async uploadFile(file: Express.Multer.File): Promise<string> {
-    const hasExtension = file.originalname.includes('.');
-    const fileExtension = hasExtension ? file.originalname.split('.').pop() : 'png';
+  async createPresignedUrl(fileName: string, fileType: string) {
+    const fileExtension = fileName.split('.');
+    const extension = fileExtension.length > 1 ? fileExtension.pop() : 'png';
 
-    const uniqueKey = `profiles/${crypto.randomUUID()}.${fileExtension}`;
+    const uniqueKey = `profiles/${crypto.randomUUID()}.${extension}`;
+
+    const command = new PutObjectCommand({
+      Bucket: this.bucketName,
+      Key: uniqueKey,
+      ContentType: fileType,
+    });
 
     try {
-      const command = new PutObjectCommand({
-        Bucket: this.bucketName,
-        Key: uniqueKey,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-      });
+      // URL expires in 300 seconds (5 minutes)
+      const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 300 });
 
-      await this.s3Client.send(command);
-
-      return `https://${this.bucketName}.s3.${this.region}.amazonaws.com/${uniqueKey}`;
+      return {
+        uploadUrl,
+        fileUrl: `https://${this.bucketName}.s3.${this.region}.amazonaws.com/${uniqueKey}`,
+      };
     } catch (error) {
-      throw new InternalServerErrorException('Failed to upload profile image to cloud storage', {
-        cause: error,
-      });
+      const errorMessage = error instanceof Error ? error.message : 'Unknown S3 error';
+      throw new InternalServerErrorException(
+        `Failed to generate secure upload path: ${errorMessage}`,
+      );
     }
   }
 }

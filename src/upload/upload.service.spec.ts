@@ -1,89 +1,105 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { mockClient } from 'aws-sdk-client-mock';
 import { UploadService } from './upload.service';
-import * as crypto from 'node:crypto';
+import { ConfigService } from '@nestjs/config';
+import { InternalServerErrorException } from '@nestjs/common';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import * as crypto from 'crypto';
 
-let mockUuidValue = '12345678-abcd-ef01-2345-6789abcdef01';
+jest.mock('@aws-sdk/client-s3');
+jest.mock('@aws-sdk/s3-request-presigner');
+jest.mock('crypto', () => ({
+  ...(jest.requireActual('crypto') as unknown as typeof crypto),
+  randomUUID: jest.fn(),
+}));
 
-jest.mock('node:crypto', () => {
-  const actual = jest.requireActual<typeof crypto>('node:crypto');
-
-  return {
-    ...actual,
-    randomUUID: jest.fn(() => mockUuidValue),
-  };
-});
-
-const s3Mock = mockClient(S3Client);
-
-describe('Upload Service', () => {
+describe('UploadService', () => {
   let service: UploadService;
+  let configService: ConfigService;
 
-  const mockConfigValues: Record<string, string> = {
-    AWS_REGION: 'ap-south-1',
-    AWS_ACCESS_KEY_ID: 'access-key',
-    AWS_SECRET_ACCESS_KEY: 'secret-key',
-    AWS_S3_BUCKET_NAME: 'mock-bucket-name',
+  const mockBucketName = 'test-bucket';
+  const mockRegion = 'ap-south-1';
+  const mockUUID = '123e4567-e89b-12d3-a456-426614174000';
+
+  const mockConfigStore: Record<string, string> = {
+    AWS_S3_BUCKET_NAME: mockBucketName,
+    AWS_REGION: mockRegion,
+    AWS_ACCESS_KEY_ID: 'mock-access-key',
+    AWS_SECRET_ACCESS_KEY: 'mock-secret-key',
   };
 
   beforeEach(async () => {
-    s3Mock.reset();
-
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UploadService,
         {
           provide: ConfigService,
           useValue: {
-            get: jest.fn((key: string) => mockConfigValues[key]),
+            get: jest.fn((key: string) => mockConfigStore[key]),
           },
         },
       ],
     }).compile();
 
     service = module.get<UploadService>(UploadService);
+    configService = module.get<ConfigService>(ConfigService);
+
+    (crypto.randomUUID as jest.Mock).mockReturnValue(mockUUID);
   });
 
-  describe('uploadProfileImage', () => {
-    it('should successfully upload an image and return the absolute S3 string URL path', async () => {
-      const mockFile = {
-        originalname: 'avatar.png',
-        mimetype: 'image/png',
-        buffer: Buffer.from('mock-file-binary-stream-buffer-data'),
-      } as Express.Multer.File;
+  it('should be successfully defined with its configurations mapped during bootstrapping', () => {
+    const infoSpy = jest.spyOn(configService, 'get');
 
-      mockUuidValue = '12345678-abcd-ef01-2345-6789abcdef01';
-      s3Mock.on(PutObjectCommand).resolves({});
+    expect(service).toBeDefined();
+    expect(infoSpy).toHaveBeenCalledWith('AWS_S3_BUCKET_NAME', { infer: true });
+    expect(infoSpy).toHaveBeenCalledWith('AWS_REGION', { infer: true });
+  });
 
-      const resultUrl = await service.uploadFile(mockFile);
+  describe('createPresignedUrl', () => {
+    const mockFileName = 'avatar.jpeg';
+    const mockFileType = 'image/jpeg';
+    const mockPresignedUrl = 'https://test-bucket.s3.ap-south-1.amazonaws.com/signed-path-string';
 
-      expect(s3Mock.calls()).toHaveLength(1);
-      expect(s3Mock.call(0).args[0].input).toEqual({
-        Bucket: 'mock-bucket-name',
-        Key: `profiles/${mockUuidValue}.png`,
-        Body: mockFile.buffer,
-        ContentType: 'image/png',
-      });
-
-      const expectedUrl = `https://mock-bucket-name.s3.ap-south-1.amazonaws.com/profiles/${mockUuidValue}.png`;
-      expect(resultUrl).toBe(expectedUrl);
+    beforeEach(() => {
+      jest.clearAllMocks();
     });
 
-    it('should default the file extension fallback logic to png if originalname contains no suffix split formatting blocks', async () => {
-      const mockFileNoExt = {
-        originalname: 'filename-without-extension',
-        mimetype: 'image/jpeg',
-        buffer: Buffer.from('binary-data'),
-      } as Express.Multer.File;
+    it('should successfully build a secure presigned upload payload structure', async () => {
+      (getSignedUrl as jest.Mock).mockResolvedValue(mockPresignedUrl);
 
-      mockUuidValue = '87654321-abcd-ef01-2345-6789abcdef01';
-      s3Mock.on(PutObjectCommand).resolves({});
+      const result = await service.createPresignedUrl(mockFileName, mockFileType);
 
-      // Act
-      const resultUrl = await service.uploadFile(mockFileNoExt);
-      expect(resultUrl).toMatch(`/profiles/${mockUuidValue}.png`);
+      const expectedKey = `profiles/${mockUUID}.jpeg`;
+      const expectedFileUrl = `https://${mockBucketName}.s3.${mockRegion}.amazonaws.com/${expectedKey}`;
+
+      expect(result).toEqual({
+        uploadUrl: mockPresignedUrl,
+        fileUrl: expectedFileUrl,
+      });
+
+      expect(PutObjectCommand).toHaveBeenCalledWith({
+        Bucket: mockBucketName,
+        Key: expectedKey,
+        ContentType: mockFileType,
+      });
+    });
+
+    it('should fallback to a default png extension formatting if file extension cannot be determined', async () => {
+      (getSignedUrl as jest.Mock).mockResolvedValue(mockPresignedUrl);
+
+      const result = await service.createPresignedUrl('no-extension-file', 'image/png');
+
+      const expectedKey = `profiles/${mockUUID}.png`;
+      expect(result.fileUrl).toContain(expectedKey);
+    });
+
+    it('should gracefully bubble an InternalServerErrorException if the S3 Client command fails', async () => {
+      const s3ErrorReason = 'AWS Network Timeout Exception';
+      (getSignedUrl as jest.Mock).mockRejectedValue(new Error(s3ErrorReason));
+
+      await expect(service.createPresignedUrl(mockFileName, mockFileType)).rejects.toThrow(
+        InternalServerErrorException,
+      );
     });
   });
 });

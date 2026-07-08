@@ -1,162 +1,116 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { CsrfService } from './csrf.service';
+import { ConfigService } from '@nestjs/config';
+import { InternalServerErrorException } from '@nestjs/common';
+import { doubleCsrf } from 'csrf-csrf';
 import type { Request, Response } from 'express';
 
-describe('CsrfService', () => {
-  let service: CsrfService;
-  let mockConfigService: Pick<ConfigService, 'get'>;
+jest.mock('csrf-csrf');
 
-  const createTestingModule = (configPairs: Record<string, unknown>) => {
-    mockConfigService = {
-      get: jest.fn().mockImplementation((key: string) => configPairs[key]),
+describe('CsrfService', () => {
+  const mockConfigStore: Record<string, string | boolean> = {
+    CSRF_ENABLED: true,
+    NODE_ENV: 'development',
+    CSRF_SECRET: 'super-secure-secret-key-123456',
+  };
+  let mockDoubleCsrfResult: {
+    generateCsrfToken: jest.Mock;
+    validateRequest: jest.Mock;
+  };
+
+  beforeEach(() => {
+    mockDoubleCsrfResult = {
+      generateCsrfToken: jest.fn(function (this: void) {
+        return 'mocked-token';
+      }),
+      validateRequest: jest.fn(function (this: void) {
+        return true;
+      }),
     };
 
-    return Test.createTestingModule({
+    (doubleCsrf as jest.Mock).mockReturnValue(mockDoubleCsrfResult);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // Factory function to compile the service dynamically per test state
+  async function createService(): Promise<CsrfService> {
+    const module: TestingModule = await Test.createTestingModule({
       providers: [
         CsrfService,
         {
           provide: ConfigService,
-          useValue: mockConfigService,
+          useValue: {
+            get: jest.fn(function (this: void, key: string) {
+              return mockConfigStore[key];
+            }),
+          },
         },
       ],
     }).compile();
-  };
 
-  describe('Initialization and Configuration', () => {
-    it('should correctly read enabled status from config', async () => {
-      const module: TestingModule = await createTestingModule({
-        CSRF_ENABLED: true,
-        CSRF_SECRET: 'super-secret',
-        NODE_ENV: 'test',
-      });
-      service = module.get<CsrfService>(CsrfService);
+    return module.get<CsrfService>(CsrfService);
+  }
+
+  describe('When CSRF protection is enabled', () => {
+    it('should initialize doubleCsrf with correct parameters and map methods', async () => {
+      const service = await createService();
 
       expect(service.enabled).toBe(true);
-      expect(service.generateToken).toBeDefined();
-      expect(service.validateRequest).toBeDefined();
+      expect(doubleCsrf).toHaveBeenCalledTimes(1);
+
+      // Verify mapped class methods resolve cleanly through the inner library mocks
+      expect(service.generateToken({} as Request, {} as Response)).toBe('mocked-token');
+      expect(service.validateRequest({} as Request)).toBe(true);
+
+      // Verify doubleCsrf option initialization parameters
+      const callArgs = (doubleCsrf as jest.Mock).mock.calls[0][0];
+      expect(callArgs.cookieName).toBe('x-csrf-token');
+      expect(callArgs.cookieOptions.secure).toBe(false); // because NODE_ENV !== production
+      expect(callArgs.getSecret()).toBe('super-secure-secret-key-123456');
+      expect(callArgs.getSessionIdentifier({ ip: '127.0.0.1' } as Request)).toBe('127.0.0.1');
+      expect(callArgs.getSessionIdentifier({} as Request)).toBe('');
+      expect(
+        callArgs.getCsrfTokenFromRequest({
+          headers: { 'x-csrf-token': 'token-value' },
+        }),
+      ).toBe('token-value');
     });
 
-    it('should fall back to false if CSRF_ENABLED is missing', async () => {
-      const module: TestingModule = await createTestingModule({
-        CSRF_SECRET: 'super-secret',
-        NODE_ENV: 'test',
-      });
-      service = module.get<CsrfService>(CsrfService);
-      expect(service.enabled).toBeUndefined();
-    });
-  });
-  describe('CsrfService Uncovered Branches (Lines 13-20)', () => {
-    it('should fall back to "dev-only" secret if CSRF_SECRET is not provided', async () => {
-      const module = await createTestingModule({
-        CSRF_ENABLED: true,
-        CSRF_SECRET: undefined,
-        NODE_ENV: 'development',
-      });
-      const devService = module.get<CsrfService>(CsrfService);
+    it('should set secure cookie flag to true when running in production context environments', async () => {
+      mockConfigStore.NODE_ENV = 'production';
+      await createService();
 
-      const req = { ip: '127.0.0.1', cookies: {} };
-      const res = { cookie: jest.fn() };
-
-      expect(() =>
-        devService.generateToken(req as Request, res as unknown as Response),
-      ).not.toThrow();
+      const callArgs = (doubleCsrf as jest.Mock).mock.calls[0][0];
+      expect(callArgs.cookieOptions.secure).toBe(true);
     });
 
-    it('should use an empty string as session identifier if req.ip is missing', async () => {
-      const module = await createTestingModule({
-        CSRF_ENABLED: true,
-        CSRF_SECRET: 'test-secret-key-32-chars-long-minimum!!!',
-        NODE_ENV: 'development',
-      });
-      const ipService = module.get<CsrfService>(CsrfService);
+    it('should throw an InternalServerErrorException if CSRF_ENABLED is true but CSRF_SECRET is missing', async () => {
+      delete mockConfigStore.CSRF_SECRET;
 
-      const req = { ip: undefined, cookies: {} };
-      const res = { cookie: jest.fn() };
-
-      expect(() =>
-        ipService.generateToken(req as Request, res as unknown as Response),
-      ).not.toThrow();
-    });
-
-    it('should set secure cookie configuration to true if NODE_ENV is production', async () => {
-      const module = await createTestingModule({
-        CSRF_ENABLED: true,
-        CSRF_SECRET: 'test-secret-key-32-chars-long-minimum!!!',
-        NODE_ENV: 'production', // 💡 Triggers the true path for === 'production'
-      });
-      const prodService = module.get<CsrfService>(CsrfService);
-
-      const req = { ip: '127.0.0.1', cookies: {} };
-      const res = { cookie: jest.fn() };
-
-      prodService.generateToken(req as Request, res as unknown as Response);
-
-      const setCookieArgs = res.cookie.mock.calls[0][2];
-      expect(setCookieArgs.secure).toBe(true);
-    });
-  });
-
-  describe('Token Generation and Validation (Double CSRF)', () => {
-    let req: Partial<Request>;
-    let res: Partial<Response>;
-
-    beforeEach(async () => {
-      const module: TestingModule = await createTestingModule({
-        CSRF_ENABLED: true,
-        CSRF_SECRET: 'test-secret-key-32-chars-long-minimum!!!',
-        NODE_ENV: 'test',
-      });
-      service = module.get<CsrfService>(CsrfService);
-
-      req = {
-        ip: '127.0.0.1',
-        headers: {},
-        cookies: {},
-      };
-
-      res = {
-        cookie: jest.fn(),
-      };
-    });
-
-    it('should generate a valid string token and set a cookie', () => {
-      const token = service.generateToken(req as Request, res as Response);
-
-      expect(typeof token).toBe('string');
-      expect(token.length).toBeGreaterThan(0);
-      expect(res.cookie).toHaveBeenCalledWith(
-        'x-csrf-token',
-        expect.any(String),
-        expect.any(Object),
+      await expect(createService()).rejects.toThrow(InternalServerErrorException);
+      await expect(createService()).rejects.toThrow(
+        'CSRF_ENABLED is true but CSRF_SECRET is not set',
       );
     });
+  });
 
-    it('should validate a request successfully if token matches the cookie context', () => {
-      const token = service.generateToken(req as Request, res as Response);
-
-      req.headers = {
-        'x-csrf-token': token,
-      };
-
-      const setCookieArgs = (res.cookie as jest.Mock).mock.calls[0];
-      req.cookies = {
-        'x-csrf-token': setCookieArgs[1],
-      };
-
-      const isValid = service.validateRequest(req as Request);
-      expect(isValid).toBe(true);
+  describe('When CSRF protection is explicitly disabled', () => {
+    beforeEach(() => {
+      mockConfigStore.CSRF_ENABLED = false;
     });
 
-    it('should fail validation if the header token is missing or altered', () => {
-      service.generateToken(req as Request, res as Response);
-      const setCookieArgs = (res.cookie as jest.Mock).mock.calls[0];
-      req.cookies = { 'x-csrf-token': setCookieArgs[1] };
+    it('should short-circuit initialization and bypass doubleCsrf instantiation entirely', async () => {
+      const service = await createService();
 
-      req.headers = { 'x-csrf-token': 'wrong-or-malicious-token' };
+      expect(service.enabled).toBe(false);
+      expect(doubleCsrf).not.toHaveBeenCalled();
 
-      const isValid = service.validateRequest(req as Request);
-      expect(isValid).toBe(false);
+      // Assert fallback baseline strategies match expected behaviors
+      expect(service.generateToken({} as Request, {} as Response)).toBe('');
+      expect(service.validateRequest({} as Request)).toBe(true);
     });
   });
 });

@@ -62,7 +62,7 @@ export class TokenService {
     return new Date(Date.now() + ms);
   }
 
-  private ttlToMs(ttl: string): number {
+  ttlToMs(ttl: string): number {
     const m = /^(\d+)([smhd])$/.exec(ttl);
     if (!m) return 7 * 24 * 60 * 60 * 1000;
     const n = Number(m[1]);
@@ -89,8 +89,23 @@ export class TokenService {
       where: { tokenHash },
     });
 
-    if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
+    if (!stored) {
       throw new UnauthorizedException('Refresh token expired or revoked');
+    }
+
+    if (stored.revokedAt) {
+      await this.revokeAllForUser(stored.userId);
+      throw new UnauthorizedException('Refresh token reuse detected — all sessions revoked');
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: { id: stored.userId, deletedAt: null },
+    });
+    if (!user || user.status === false) {
+      throw new UnauthorizedException('Account inactive');
+    }
+    if (stored.expiresAt < new Date()) {
+      throw new UnauthorizedException('Refresh token expired');
     }
 
     await this.prisma.refreshToken.update({

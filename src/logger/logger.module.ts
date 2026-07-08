@@ -28,6 +28,6 @@ import { Env } from '../config/env.validation';
 })
 export class AppLoggerModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(CorrelationIdMiddleware).forRoutes('{*splat}');
+    consumer.apply(CorrelationIdMiddleware).exclude('health/live').forRoutes('{*splat}');
   }
 }

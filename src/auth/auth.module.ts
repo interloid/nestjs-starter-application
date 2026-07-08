@@ -5,7 +5,6 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { TokenService } from './services/token.service';
 import { UserModule } from '../user/user.module';
-import { PasswordService } from './services/password.service';
 import { LocalStrategy } from './strategies/local.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { VerificationTokenService } from './services/verification-token.service';
@@ -13,14 +12,7 @@ import { VerificationTokenService } from './services/verification-token.service'
 @Module({
   imports: [PassportModule, JwtModule.register({}), UserModule],
   controllers: [AuthController],
-  providers: [
-    AuthService,
-    TokenService,
-    PasswordService,
-    LocalStrategy,
-    JwtStrategy,
-    VerificationTokenService,
-  ],
+  providers: [AuthService, TokenService, LocalStrategy, JwtStrategy, VerificationTokenService],
   exports: [TokenService],
 })
 export class AuthModule {}

@@ -11,17 +11,49 @@ services:
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
         BUILD_TIME: ${BUILD_TIME:-unknown}
     ports:
-      - "8080:8080"
+      - '8080:8080'
     env_file:
       - .env
     environment:
       - NODE_ENV=production
+      - APP_ENV=production
       # Point Redis at the internal service name (overrides .env for the container)
       - REDIS_URL=redis://redis:6379/0
-      # DATABASE_URL intentionally NOT set here -> falls back to .env (external DB)
+      - DATABASE_URL=postgresql://postgres:postgres@postgres_db:5432/starter_test?schema=public
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8080/health/live']
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     depends_on:
       redis:
         condition: service_healthy
+      postgres_db:
+        condition: service_healthy #
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # ==========================================
+  # PostgreSQL (Database)
+  # ==========================================
+  postgres_db:
+    container_name: postgres_db
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=starter_test
+    ports:
+      - '5433:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
     networks:
       - app-network
@@ -48,6 +80,8 @@ services:
 
 volumes:
   redisdata:
+    driver: local
+  pgdata:
     driver: local
 
 networks:

@@ -1,7 +1,12 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PasswordService } from '../auth/services/password.service';
+import { PasswordService } from '../common/crypto/password.service';
 import { RegisterDto } from '../auth/dto/auth.dto';
 
 @Injectable()
@@ -14,8 +19,10 @@ export class UserService {
   async create(data: RegisterDto): Promise<User> {
     const email = data.email.toLowerCase().trim();
 
-    const role = await this.prisma.role.findFirst({ where: { name: data.role } });
-    if (!role) throw new NotFoundException('Role not found invalid role');
+    const role = await this.prisma.role.findUnique({ where: { name: 'user' } });
+    if (!role) {
+      throw new InternalServerErrorException('Default role missing — run the seed');
+    }
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
       throw new ConflictException('Email already registered');
@@ -90,5 +97,28 @@ export class UserService {
       where: { deletedAt: null },
       omit: { passwordHash: true },
     });
+  }
+  async assignRole(id: string, role: string) {
+    const user = await this.prisma.user.findFirst({ where: { id, deletedAt: null } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const existingRole = await this.prisma.role.findUnique({ where: { name: role } });
+    if (!existingRole) {
+      throw new NotFoundException('Role not found');
+    }
+    await this.prisma.userRole.upsert({
+      where: {
+        userId_roleId: {
+          userId: id,
+          roleId: existingRole.id,
+        },
+      },
+      update: {},
+      create: {
+        userId: id,
+        roleId: existingRole.id,
+      },
+    });
+    return this.findByIdWithRoles(id);
   }
 }
